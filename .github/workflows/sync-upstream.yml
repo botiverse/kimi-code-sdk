@@ -95,7 +95,11 @@ jobs:
         run: |
           corepack enable
           pnpm -v
-          pnpm install --frozen-lockfile
+          # Scope to node-sdk's dependency closure only (its bundled siblings +
+          # their deps) — NOT the whole monorepo. apps/kimi-code (TUI) and
+          # apps/vis (web/server) are not node-sdk deps; installing them would
+          # be heavy and could fail the smoke on unrelated app issues.
+          pnpm install --frozen-lockfile --filter "@moonshot-ai/kimi-code-sdk..."
           pnpm --filter @moonshot-ai/kimi-code-sdk build
         continue-on-error: true
 
