@@ -1,0 +1,119 @@
+name: sync-upstream
+
+# Daily read-only mirror sync of MoonshotAI/kimi-code into this repo.
+# - Fast-forwards `upstream-main` to upstream/main.
+# - For every NEW upstream release tag, creates an immutable mirror tag +
+#   a `release/v<X.Y.Z>` branch (immutable: upstream force-pushes never move them).
+# - Runs a post-sync smoke build of the node-sdk so upstream breaking changes
+#   are caught at sync time, not at consume time. Failure opens an issue.
+#
+# SETUP (one-time): add a repo secret `SYNC_PAT` = a fine-grained/classic PAT with
+# `repo` + `workflow` scope. The default GITHUB_TOKEN cannot push commits that touch
+# upstream's `.github/workflows/**`, so the ff-push needs SYNC_PAT. See README "Sync SOP".
+
+on:
+  schedule:
+    - cron: '17 4 * * *'   # daily 04:17 UTC
+  workflow_dispatch: {}
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+
+env:
+  UPSTREAM: https://github.com/MoonshotAI/kimi-code.git
+  UPSTREAM_BRANCH: main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo (full history + tags)
+        uses: actions/checkout@v4
+        with:
+          ref: upstream-main
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_PAT || github.token }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "botiverse-sync[bot]"
+          git config user.email "sync@mail.build"
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream "$UPSTREAM"
+          git fetch --tags --prune upstream "$UPSTREAM_BRANCH"
+
+      - name: Fast-forward upstream-main
+        id: ff
+        run: |
+          before="$(git rev-parse HEAD)"
+          # Fail loudly if upstream is NOT a fast-forward (history rewrite upstream).
+          if ! git merge-base --is-ancestor "$before" "upstream/$UPSTREAM_BRANCH"; then
+            echo "::warning::upstream/$UPSTREAM_BRANCH is not a fast-forward of our upstream-main (upstream history rewrite). Mirror tags stay immutable; not moving upstream-main automatically."
+            echo "diverged=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git reset --hard "upstream/$UPSTREAM_BRANCH"
+          after="$(git rev-parse HEAD)"
+          echo "before=$before" >> "$GITHUB_OUTPUT"
+          echo "after=$after"  >> "$GITHUB_OUTPUT"
+          [ "$before" != "$after" ] && echo "changed=true" >> "$GITHUB_OUTPUT" || echo "changed=false" >> "$GITHUB_OUTPUT"
+
+      - name: Mirror new upstream tags + create release branches (immutable)
+        if: steps.ff.outputs.diverged != 'true'
+        run: |
+          git fetch --tags upstream
+          # Our existing mirror tags:
+          existing="$(git tag)"
+          new_tags=0
+          # Iterate upstream tags of the form @moonshot-ai/kimi-code@X.Y.Z
+          for t in $(git ls-remote --tags upstream | sed 's#.*refs/tags/##' | grep -v '\^{}' | sort -u); do
+            case "$t" in
+              @moonshot-ai/kimi-code@*) ver="${t##*@}" ;;
+              *) continue ;;
+            esac
+            # Skip if this mirror tag already exists (immutable: never re-point).
+            if echo "$existing" | grep -qxF "$t"; then continue; fi
+            sha="$(git rev-list -n1 "refs/tags/$t" 2>/dev/null || true)"
+            [ -z "$sha" ] && continue
+            git tag "$t" "$sha"                                   # immutable mirror tag (exact upstream name)
+            git branch -f "release/v$ver" "$sha"                  # readable release branch
+            echo "mirrored $t -> release/v$ver"
+            new_tags=$((new_tags+1))
+          done
+          echo "new_tags=$new_tags"
+
+      - name: Post-sync smoke (build node-sdk)
+        if: steps.ff.outputs.changed == 'true' && steps.ff.outputs.diverged != 'true'
+        id: smoke
+        run: |
+          corepack enable
+          pnpm -v
+          pnpm install --frozen-lockfile
+          pnpm --filter @moonshot-ai/kimi-code-sdk build
+        continue-on-error: true
+
+      - name: Push mirror (upstream-main + tags + release branches)
+        if: steps.ff.outputs.diverged != 'true'
+        run: |
+          git push origin "HEAD:upstream-main"
+          git push origin --tags
+          git push origin "refs/heads/release/*:refs/heads/release/*" || true
+
+      - name: Open issue on smoke failure
+        if: steps.smoke.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner, repo: context.repo.repo,
+              title: `sync-upstream smoke build failed (upstream-main @ ${{ steps.ff.outputs.after }})`,
+              body: `The daily mirror sync fast-forwarded upstream-main but the post-sync node-sdk smoke build failed.\n\nThis usually means an **upstream breaking change**. Triage runbook in README → "Sync SOP". Consumers should stay pinned to the last green mirror tag until resolved.\n\nRun: ${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              labels: ['sync','upstream-break']
+            });
