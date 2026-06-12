@@ -93,9 +93,40 @@ push-triggered upstream CI, disable Actions for non-`main` branches or keep Acti
 - If upstream changes its monorepo layout, the smoke build's `--filter`/paths must follow
   (this runbook, step 2).
 
-## 6. Ownership
+## 6. Publishing `@botiverse/kimi-code-sdk` to npm
+
+The repackaged, dist-only SDK (`@botiverse/kimi-code-sdk`) is published to npm via **OIDC
+trusted publishing** (no long-lived token), **tag-triggered**, with the maintainer in the loop.
+
+- **Version** = node-sdk's own `package.json` version (e.g. `0.9.3`), independent of the CLI
+  release tag (`0.14.2`). `RELEASES.md` records the mapping.
+- **Build artifact** = the bundled `dist` only (siblings are inlined by `tsdown`); deps reduce to
+  the few light runtime ones. Upstream MIT `LICENSE` + our `NOTICE.md` ship in the tarball.
+- **Workflow**: `.github/workflows/publish-sdk.yml`.
+
+### How to publish a release
+
+1. Pick the upstream mirror tag to ship (e.g. `@moonshot-ai/kimi-code@0.14.2`).
+2. Write/confirm the interface release note (GitHub Release + `RELEASES.md`).
+3. Tag the **same upstream-source commit** with a publish tag and push it:
+   ```
+   git tag publish-sdk/v0.9.3 '@moonshot-ai/kimi-code@0.14.2'
+   git push botiverse publish-sdk/v0.9.3
+   ```
+   The workflow checks out that source, builds node-sdk, repackages, asserts the tag version
+   matches the source `package.json` version (fails closed on mismatch), and publishes via OIDC.
+   `workflow_dispatch` (with `source_tag`, `dry_run` default true) is the manual / dry-run path.
+
+### One-time human setup (cannot be done from CI)
+
+- On npmjs.com, configure the `@botiverse/kimi-code-sdk` **Trusted Publisher**: repo
+  `botiverse/kimi-code-sdk`, workflow `publish-sdk.yml` (optional environment `npm-publish`).
+- A brand-new package name may need one bootstrap publish by a logged-in `@botiverse`
+  maintainer to create it; OIDC handles every release after.
+- (Optional) protected GitHub Environment `npm-publish` with required reviewers = the manual
+  approval gate before the publish step runs.
+
+## 7. Ownership
 
 - Maintainer: **@Kai** (Slock infra/runtime).
 - Escalation: runtime/daemon owners in `#proj-runtime`.
-- Not in scope (Phase 2, deferred): building + publishing `@botiverse/kimi-code-sdk` to npm —
-  done only when the Slock daemon actually integrates the SDK. The mirror comes first.

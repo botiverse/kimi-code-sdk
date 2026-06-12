@@ -1,0 +1,116 @@
+name: publish-sdk
+
+# Phase 2 — publish @botiverse/kimi-code-sdk to npm via OIDC trusted publishing.
+#
+# Design (tygg, #proj-runtime:626b08f7 6/13): OIDC trusted publishing (NO long-lived
+# NPM_TOKEN), TAG-triggered, human/agent IN THE LOOP (not fully auto on every upstream
+# release — Kai writes the release note + decides, then pushes the publish tag).
+#
+# HOW TO PUBLISH (maintainer = Kai):
+#   1. Pick the upstream mirror tag to ship, e.g. @moonshot-ai/kimi-code@0.14.2
+#      (node-sdk's own version at that tag = the npm version, e.g. 0.9.3 — see RELEASES.md).
+#   2. Write/confirm the interface release note (GitHub Release + RELEASES.md).
+#   3. Put a publish tag on that SAME upstream-source commit and push it:
+#        git tag publish-sdk/v0.9.3 '@moonshot-ai/kimi-code@0.14.2'   # same commit = upstream source
+#        git push botiverse publish-sdk/v0.9.3
+#      The workflow checks out that source, builds node-sdk, repackages, and publishes.
+#   The tag suffix (v0.9.3) MUST equal node-sdk's package.json version at that source — the
+#   job asserts it and fails closed on mismatch.
+#
+# ONE-TIME HUMAN SETUP (cannot be done from CI/non-interactively):
+#   - npmjs.com → @botiverse/kimi-code-sdk → configure Trusted Publisher:
+#       repo = botiverse/kimi-code-sdk, workflow = publish-sdk.yml, (optional) environment = npm-publish.
+#   - If the package does not exist yet, npm trusted publishing for a brand-new name may need a
+#     first bootstrap publish by a logged-in @botiverse maintainer (then OIDC for every release after).
+#   - (Optional) create a protected GitHub Environment `npm-publish` with required reviewers
+#     = the manual approval gate ("participate in it") before the publish step runs.
+
+on:
+  push:
+    tags:
+      - 'publish-sdk/v*'        # deliberate publish tag pushed by Kai (in the loop)
+  workflow_dispatch:
+    inputs:
+      source_tag:
+        description: 'Upstream mirror tag to build from, e.g. @moonshot-ai/kimi-code@0.14.2'
+        required: true
+      dry_run:
+        description: 'Dry run (build + pack + publish --dry-run, no real publish)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write              # OIDC trusted publishing + provenance attestation
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm-publish     # optional manual-approval gate (create the env to require review)
+    steps:
+      - name: Resolve build ref + intent
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # publish tag points at the upstream-source commit; checking it out gives the source.
+            echo "build_ref=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "expected_version=${GITHUB_REF_NAME#publish-sdk/v}" >> "$GITHUB_OUTPUT"
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build_ref=${{ inputs.source_tag }}" >> "$GITHUB_OUTPUT"
+            echo "expected_version=" >> "$GITHUB_OUTPUT"
+            echo "dry_run=${{ inputs.dry_run }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout upstream source at build ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.resolve.outputs.build_ref }}
+          fetch-depth: 1
+
+      - name: Checkout our scripts (main)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: .mirror-main
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Use npm with OIDC trusted-publishing support
+        run: npm install -g npm@latest   # trusted publishing needs npm >= 11.5
+
+      - name: Build node-sdk (scoped install of its closure only)
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile --filter "@moonshot-ai/kimi-code-sdk..."
+          pnpm --filter @moonshot-ai/kimi-code-sdk build
+
+      - name: Assert tag version matches node-sdk source version
+        if: steps.resolve.outputs.expected_version != ''
+        run: |
+          SRC_VER=$(node -p "require('./packages/node-sdk/package.json').version")
+          EXP="${{ steps.resolve.outputs.expected_version }}"
+          if [ "$SRC_VER" != "$EXP" ]; then
+            echo "::error::publish tag says v$EXP but node-sdk source version is $SRC_VER — refusing to publish"
+            exit 1
+          fi
+          echo "version ok: $SRC_VER"
+
+      - name: Repackage -> @botiverse/kimi-code-sdk
+        run: node .mirror-main/scripts/repackage-sdk.mjs packages/node-sdk ./.out-sdk "${{ steps.resolve.outputs.build_ref }}"
+
+      - name: Pack + publish
+        working-directory: ./.out-sdk
+        run: |
+          npm pack
+          if [ "${{ steps.resolve.outputs.dry_run }}" = "true" ]; then
+            echo "DRY RUN — publish --dry-run only"
+            npm publish --dry-run --access public
+          else
+            # OIDC trusted publishing: no NODE_AUTH_TOKEN; npm resolves identity from id-token.
+            npm publish --access public --provenance
+          fi
