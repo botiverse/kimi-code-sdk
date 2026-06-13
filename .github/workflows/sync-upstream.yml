@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout this repo (full history + tags)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: upstream-main
           fetch-depth: 0
