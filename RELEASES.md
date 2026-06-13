@@ -7,6 +7,16 @@ notes; the upstream app `CHANGELOG.md` covers the CLI/TUI, not the node-sdk inte
 Diff basis: the public surface of `packages/node-sdk` (entry `src/index.ts`) between
 consecutive release tags. **Bump the Slock pin only after reading the interface delta below.**
 
+## npm package version mapping
+
+The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. Its version
+follows the upstream node-sdk's own internal version (independent of the CLI release tag).
+Consumers can pin either by upstream mirror tag (full-monorepo source) or by npm version.
+
+| upstream CLI tag (mirror) | node-sdk version → npm `@botiverse/kimi-code-sdk@` |
+| --- | --- |
+| `@moonshot-ai/kimi-code@0.14.2` | `0.9.3` (first npm publish, 2026-06-13) |
+
 ---
 
 ## @moonshot-ai/kimi-code@0.14.2  (← 0.14.1)
