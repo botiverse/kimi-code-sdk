@@ -79,6 +79,10 @@ jobs:
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
+          # v5 enabled package-manager auto-cache by default; it tries to resolve pnpm
+          # before we corepack-enable it later in the job. Disable so corepack stays the
+          # source of truth (we pin pnpm via kimi-code's `packageManager` field).
+          package-manager-cache: false
 
       - name: Use npm with OIDC trusted-publishing support
         run: npm install -g npm@latest   # trusted publishing needs npm >= 11.5
