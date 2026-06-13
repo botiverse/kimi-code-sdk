@@ -89,6 +89,13 @@ jobs:
           done
           echo "new_tags=$new_tags"
 
+      - name: Set up Node 24 for smoke build
+        if: steps.ff.outputs.changed == 'true' && steps.ff.outputs.diverged != 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24    # kimi-code's package.json sets engines.node ">=24.15.0"
+          package-manager-cache: false   # corepack stays the source of truth (see publish-sdk.yml)
+
       - name: Post-sync smoke (build node-sdk)
         if: steps.ff.outputs.changed == 'true' && steps.ff.outputs.diverged != 'true'
         id: smoke

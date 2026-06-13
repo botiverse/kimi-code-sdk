@@ -77,7 +77,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 24    # kimi-code's package.json sets engines.node ">=24.15.0"
           registry-url: 'https://registry.npmjs.org'
           # v5 enabled package-manager auto-cache by default; it tries to resolve pnpm
           # before we corepack-enable it later in the job. Disable so corepack stays the
