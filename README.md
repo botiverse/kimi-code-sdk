@@ -35,21 +35,24 @@ ACP (Agent Client Protocol) doesn't expose a **steering** capability — i.e. yo
 | `main` (default) | **Ours only** — this README + the CI workflows. No upstream code. |
 | `upstream-main` | Fast-forward mirror of upstream `main`. Moves forward daily; **never rewritten** (if upstream rewrites history, we hold and alert — see SOP). |
 | `release/v<X.Y.Z>` | A readable branch pinned at upstream release `X.Y.Z` (for stacking a `patch-*` if ever needed). |
-| `@moonshot-ai/kimi-code@<X.Y.Z>` (tag) | **Immutable mirror tag** = the exact upstream release name, frozen at our mirror. **This is what consumers pin.** |
+| `@moonshot-ai/kimi-code@<X.Y.Z>` (tag) | **Immutable mirror tag** = the exact upstream release name, frozen at our mirror. Source-level pin for vendoring or local patching. |
 
 ### What consumers should pin
 
-Either **the immutable mirror tag** (full monorepo source), or **the npm package version**:
+**Recommended: `npm install`.** This gives you the dist-only repackage with just the few light runtime dependencies — no monorepo, no upstream toolchain, the typical consumer path:
 
 ```sh
-# Mirror tag — full monorepo source, useful for vendoring or local patching
-github:botiverse/kimi-code-sdk#@moonshot-ai/kimi-code@0.14.3
-
-# npm — dist-only, the typical consumer path
 npm install @botiverse/kimi-code-sdk@0.9.3
 ```
 
-The mirror-tag immutability guarantee: even if upstream force-pushes or deletes a tag, the mirror tag stays frozen at the commit it pointed to when we first mirrored it. The npm version is correspondingly immutable per npm's own semantics.
+Use the mirror tag only when you actually need the full upstream monorepo source (vendoring, local patching, or studying):
+
+```sh
+# Less common — full monorepo source, much heavier
+github:botiverse/kimi-code-sdk#@moonshot-ai/kimi-code@0.14.3
+```
+
+Both are immutable. The mirror tag stays frozen at the commit it pointed to when we first mirrored it, even if upstream force-pushes or deletes the upstream tag. The npm version is immutable per npm's own semantics.
 
 `RELEASES.md` records the upstream-tag ↔ npm-version mapping plus interface notes per release.
 
