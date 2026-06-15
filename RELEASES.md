@@ -15,7 +15,20 @@ Consumers can pin either by upstream mirror tag (full-monorepo source) or by npm
 
 | upstream CLI tag (mirror) | node-sdk version → npm `@botiverse/kimi-code-sdk@` |
 | --- | --- |
+| `@moonshot-ai/kimi-code@0.14.3` | `0.9.3` (no SDK change, no new npm publish) |
 | `@moonshot-ai/kimi-code@0.14.2` | `0.9.3` (first npm publish, 2026-06-13) |
+
+---
+
+## @moonshot-ai/kimi-code@0.14.3  (← 0.14.2)
+
+**node-sdk interface: NO change.** This upstream release is CLI/TUI-only.
+
+- Diff scope: only `apps/kimi-code/` and `docs/` changed; **zero changes to `packages/node-sdk/`** or any of its bundled siblings (`agent-core`, `kosong`, `kaos`, `oauth`, `protocol`, `acp-adapter`, `telemetry`).
+- Single feature commit: `feat(kimi-code): refresh OAuth provider models before opening model picker (#713)` — CLI/TUI only.
+- node-sdk `package.json` version unchanged at `0.9.3`.
+
+**Slock consumer impact:** **no action needed.** The mirror tag exists for completeness, but consumers pinning `0.9.3` (npm) or `@moonshot-ai/kimi-code@0.14.2` (mirror) can stay — there is no SDK interface delta to react to. No new npm publish: `@botiverse/kimi-code-sdk@0.9.3` already covers this upstream release.
 
 ---
 
