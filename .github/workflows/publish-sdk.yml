@@ -34,6 +34,10 @@ on:
       source_tag:
         description: 'Upstream mirror tag to build from, e.g. @moonshot-ai/kimi-code@0.14.2'
         required: true
+      npm_version:
+        description: 'npm package version to publish (default = upstream node-sdk pkg.version; override when bundled-implementation refresh warrants a Botiverse-side patch-bump)'
+        required: false
+        default: ''
       dry_run:
         description: 'Dry run (build + pack + publish --dry-run, no real publish)'
         type: boolean
@@ -58,7 +62,7 @@ jobs:
             echo "dry_run=false" >> "$GITHUB_OUTPUT"
           else
             echo "build_ref=${{ inputs.source_tag }}" >> "$GITHUB_OUTPUT"
-            echo "expected_version=" >> "$GITHUB_OUTPUT"
+            echo "expected_version=${{ inputs.npm_version }}" >> "$GITHUB_OUTPUT"
             echo "dry_run=${{ inputs.dry_run }}" >> "$GITHUB_OUTPUT"
           fi
 
