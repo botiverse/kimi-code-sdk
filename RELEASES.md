@@ -15,9 +15,16 @@ Consumers can pin either by upstream mirror tag (full-monorepo source) or by npm
 
 | upstream CLI tag (mirror) | node-sdk version → npm `@botiverse/kimi-code-sdk@` |
 | --- | --- |
-| `@moonshot-ai/kimi-code@0.15.0` | `0.9.3` (public API unchanged; bundled-implementation refresh — see note) |
+| `@moonshot-ai/kimi-code@0.15.0` | **`0.9.4`** (Botiverse override — upstream node-sdk pkg version stayed `0.9.3`; we patch-bump to ship the bundled-implementation refresh) |
 | `@moonshot-ai/kimi-code@0.14.3` | `0.9.3` (no SDK change, no new npm publish) |
 | `@moonshot-ai/kimi-code@0.14.2` | `0.9.3` (first npm publish, 2026-06-13) |
+
+**Versioning policy (locked 2026-06-16, tygg msg=dd0680ba):** the npm package version is **maintained independently** of upstream's internal node-sdk `package.json.version`. Rule:
+- Upstream bumps its node-sdk `package.json.version` → we follow it.
+- Upstream doesn't bump but ships a meaningful bundled-implementation refresh (siblings inlined into `dist`) → **we patch-bump on our side**.
+- Pure docs / CLI / no SDK impact → no npm publish.
+
+Rationale: upstream is a private-internal package whose semver cadence is theirs and may be lazy; our consumers' update cadence shouldn't be hostage to it. The `repackage-sdk.mjs` script accepts a 4th-arg `npm-version-override`, and `publish-sdk.yml` plumbs the publish tag suffix (`publish-sdk/v<X.Y.Z>`) as that override when it differs from the upstream version.
 
 ---
 

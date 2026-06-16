@@ -93,19 +93,22 @@ jobs:
           pnpm install --frozen-lockfile --filter "@moonshot-ai/kimi-code-sdk..."
           pnpm --filter @moonshot-ai/kimi-code-sdk build
 
-      - name: Assert tag version matches node-sdk source version
+      - name: Compare tag version vs node-sdk source version
         if: steps.resolve.outputs.expected_version != ''
+        id: version_check
         run: |
           SRC_VER=$(node -p "require('./packages/node-sdk/package.json').version")
           EXP="${{ steps.resolve.outputs.expected_version }}"
-          if [ "$SRC_VER" != "$EXP" ]; then
-            echo "::error::publish tag says v$EXP but node-sdk source version is $SRC_VER — refusing to publish"
-            exit 1
+          if [ "$SRC_VER" = "$EXP" ]; then
+            echo "match: tag v$EXP == source $SRC_VER (no override)"
+            echo "override=" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::publish tag v$EXP differs from upstream node-sdk source $SRC_VER — publishing as Botiverse-side override (independent npm cadence; see RELEASES.md mapping table)."
+            echo "override=$EXP" >> "$GITHUB_OUTPUT"
           fi
-          echo "version ok: $SRC_VER"
 
       - name: Repackage -> @botiverse/kimi-code-sdk
-        run: node .mirror-main/scripts/repackage-sdk.mjs packages/node-sdk ./.out-sdk "${{ steps.resolve.outputs.build_ref }}"
+        run: node .mirror-main/scripts/repackage-sdk.mjs packages/node-sdk ./.out-sdk "${{ steps.resolve.outputs.build_ref }}" "${{ steps.version_check.outputs.override }}"
 
       - name: Pack + publish
         working-directory: ./.out-sdk
