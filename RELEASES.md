@@ -9,22 +9,20 @@ consecutive release tags. **Bump the Slock pin only after reading the interface 
 
 ## npm package version mapping
 
-The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. Its version
-follows the upstream node-sdk's own internal version (independent of the CLI release tag).
-Consumers can pin either by upstream mirror tag (full-monorepo source) or by npm version.
+The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. **Its version aligns with the upstream Kimi Code CLI release tag** — when upstream cuts `@moonshot-ai/kimi-code@X.Y.Z`, we publish `@botiverse/kimi-code-sdk@X.Y.Z`.
 
-| upstream CLI tag (mirror) | node-sdk version → npm `@botiverse/kimi-code-sdk@` |
+| upstream CLI tag (mirror) | npm `@botiverse/kimi-code-sdk@` |
 | --- | --- |
-| `@moonshot-ai/kimi-code@0.15.0` | **`0.9.4`** (Botiverse override — upstream node-sdk pkg version stayed `0.9.3`; we patch-bump to ship the bundled-implementation refresh) |
-| `@moonshot-ai/kimi-code@0.14.3` | `0.9.3` (no SDK change, no new npm publish) |
-| `@moonshot-ai/kimi-code@0.14.2` | `0.9.3` (first npm publish, 2026-06-13) |
+| `@moonshot-ai/kimi-code@0.15.0` | `0.15.0` (current; published 2026-06-16) |
+| `@moonshot-ai/kimi-code@0.14.3` | _(no separate publish)_ |
+| `@moonshot-ai/kimi-code@0.14.2` | `0.9.3` (legacy — first npm publish, internal node-sdk version; superseded by `0.15.0`) |
+| _(internal patch-bump experiment)_ | `0.9.4` (legacy — superseded by `0.15.0`) |
 
-**Versioning policy (locked 2026-06-16, tygg msg=dd0680ba):** the npm package version is **maintained independently** of upstream's internal node-sdk `package.json.version`. Rule:
-- Upstream bumps its node-sdk `package.json.version` → we follow it.
-- Upstream doesn't bump but ships a meaningful bundled-implementation refresh (siblings inlined into `dist`) → **we patch-bump on our side**.
-- Pure docs / CLI / no SDK impact → no npm publish.
+**Versioning policy (locked 2026-06-16, tygg msgs=cb736b39 / 9cfb4824 / c1f01b13):** the npm package version **mirrors the upstream Kimi Code CLI tag**. Rule:
+- Upstream cuts a new CLI release tag → we publish the same version (e.g. `@moonshot-ai/kimi-code@0.16.0` → `@botiverse/kimi-code-sdk@0.16.0`).
+- Upstream doesn't release → **we don't publish**. If we ever need to ship a fix to our repackage tooling, it rides the next upstream release.
 
-Rationale: upstream is a private-internal package whose semver cadence is theirs and may be lazy; our consumers' update cadence shouldn't be hostage to it. The `repackage-sdk.mjs` script accepts a 4th-arg `npm-version-override`, and `publish-sdk.yml` plumbs the publish tag suffix (`publish-sdk/v<X.Y.Z>`) as that override when it differs from the upstream version.
+Rationale: 1:1 alignment with the upstream tag consumers can find in Kimi Code release notes is more controllable than maintaining an independent semver. Earlier `0.9.3` and `0.9.4` (which followed the internal node-sdk version) are deprecated on npm in favor of `0.15.0`. The `repackage-sdk.mjs` script's `npm-version-override` arg is retained but its expected use is just "set the version to the upstream CLI tag" — no patch-bump arithmetic.
 
 ---
 
@@ -42,10 +40,9 @@ Rationale: upstream is a private-internal package whose semver cadence is theirs
 - **`update` (CLI-side)**: rolling automatic updates via CDN manifest (`#691`) — only affects the kimi CLI, not the SDK.
 
 **Slock consumer impact:**
-- **No public SDK action needed** — `@botiverse/kimi-code-sdk@0.9.3` consumers see no API change.
-- npm publishConfig keeps `0.9.3` immutable (correct per npm semantics; you can't overwrite an existing version). The currently-shipped npm tarball was built from upstream `0.14.2` source, so it has the OLDER bundled siblings.
-- **Consumers who want the newer bundled-implementation behaviour** (improved system-prompt context, MCP-over-SSE, resume-interrupted-toolcalls fix) should pin to `github:botiverse/kimi-code-sdk#@moonshot-ai/kimi-code@0.15.0` (full monorepo source), OR wait for upstream to bump node-sdk's `package.json` version (which would let us republish a fresh `0.9.4`).
-- Slock daemon's `kimi-sdk` driver runs against the npm dist, so until we get a node-sdk version bump from upstream we stay on the 0.14.2-bundled tarball — which IS production-shape (the 0.14.3 → 0.15.0 bundled improvements are nice-to-have, not corrective).
+- Public SDK API unchanged; existing imports keep working.
+- **Update to `@botiverse/kimi-code-sdk@0.15.0`** to pick up the bundled-implementation refresh (improved system-prompt context, MCP-over-SSE, resume-interrupted-toolcalls fix, Xcode 26.5 MCP schema fix, etc.). This is the first npm publish under the new "align to upstream CLI tag" versioning policy — the version jump from `0.9.3`/`0.9.4` to `0.15.0` is intentional, not breaking.
+- Earlier `0.9.3` and `0.9.4` are deprecated on npm; please migrate.
 
 ---
 
