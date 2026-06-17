@@ -13,7 +13,8 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 
 | upstream CLI tag (mirror) | npm `@botiverse/kimi-code-sdk@` |
 | --- | --- |
-| `@moonshot-ai/kimi-code@0.15.0` | `0.15.0` (current; published 2026-06-16) |
+| `@moonshot-ai/kimi-code@0.16.0` | `0.16.0` (current; published 2026-06-17) |
+| `@moonshot-ai/kimi-code@0.15.0` | `0.15.0` (published 2026-06-16) |
 | `@moonshot-ai/kimi-code@0.14.3` | _(no separate publish)_ |
 | `@moonshot-ai/kimi-code@0.14.2` | `0.9.3` (legacy — first npm publish, internal node-sdk version; superseded by `0.15.0`) |
 | _(internal patch-bump experiment)_ | `0.9.4` (legacy — superseded by `0.15.0`) |
@@ -23,6 +24,27 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 - Upstream doesn't release → **we don't publish**. If we ever need to ship a fix to our repackage tooling, it rides the next upstream release.
 
 Rationale: 1:1 alignment with the upstream tag consumers can find in Kimi Code release notes is more controllable than maintaining an independent semver. Earlier `0.9.3` and `0.9.4` (which followed the internal node-sdk version) are deprecated on npm in favor of `0.15.0`. The `repackage-sdk.mjs` script's `npm-version-override` arg is retained but its expected use is just "set the version to the upstream CLI tag" — no patch-bump arithmetic.
+
+---
+
+## @moonshot-ai/kimi-code@0.16.0  (← 0.15.0)
+
+**node-sdk public interface: NO change.** node-sdk's `package.json` version stays at `0.9.3`; `src/index.ts` exports unchanged; no diff under `packages/node-sdk/` itself.
+
+**Bundled-implementation siblings shipped notable runtime changes** — `tsdown` inlines `agent-core`, `kosong`, `kaos` into node-sdk's `dist`:
+
+- **`agent-core@0.13.1`**:
+  - fix: handle repeated compaction when context remains over the blocking threshold (`#813`).
+  - fix: project session replay ranges over rendered replay records instead of raw persisted records (`#805`).
+  - fix: prevent session shutdown from resuming the agent when stopping background tasks (`#804`).
+  - chore: remove redundant LLM request logging context plumbing (`#823`).
+- **`kosong@0.4.6`** fix: stop Anthropic-compatible providers from reading ambient Anthropic shell credentials and custom headers (`#790`) — host-isolation hardening; prevents a kosong-built daemon from picking up an out-of-band `ANTHROPIC_API_KEY` / extra headers from the host shell.
+- **`kaos@0.1.6`** fix: close wrapped output streams when buffered readers are destroyed (`#807`) — resource-leak fix on the IO helper.
+
+**Slock consumer impact:**
+- Public SDK API unchanged; existing imports keep working.
+- **Update to `@botiverse/kimi-code-sdk@0.16.0`** to pick up the compaction-loop / replay-range / shutdown-resume fixes (all relevant to long sessions and Slock's `daemon.runtime.turn` lifecycle), the kosong Anthropic-shell-credential isolation fix (relevant if a daemon ever runs alongside an `ANTHROPIC_API_KEY`-set shell), and the kaos stream-close fix.
+- No breaking change; this is a drop-in bump.
 
 ---
 
