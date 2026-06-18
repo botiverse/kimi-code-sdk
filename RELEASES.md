@@ -13,7 +13,9 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 
 | upstream CLI tag (mirror) | npm `@botiverse/kimi-code-sdk@` |
 | --- | --- |
-| `@moonshot-ai/kimi-code@0.16.0` | `0.16.0` (current; published 2026-06-17) |
+| `@moonshot-ai/kimi-code@0.17.1` | `0.17.1` (current; published 2026-06-18) |
+| `@moonshot-ai/kimi-code@0.17.0` | `0.17.0` (published 2026-06-18) |
+| `@moonshot-ai/kimi-code@0.16.0` | `0.16.0` (published 2026-06-17) |
 | `@moonshot-ai/kimi-code@0.15.0` | `0.15.0` (published 2026-06-16) |
 | `@moonshot-ai/kimi-code@0.14.3` | _(no separate publish)_ |
 | `@moonshot-ai/kimi-code@0.14.2` | `0.9.3` (legacy — first npm publish, internal node-sdk version; superseded by `0.15.0`) |
@@ -24,6 +26,49 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 - Upstream doesn't release → **we don't publish**. If we ever need to ship a fix to our repackage tooling, it rides the next upstream release.
 
 Rationale: 1:1 alignment with the upstream tag consumers can find in Kimi Code release notes is more controllable than maintaining an independent semver. Earlier `0.9.3` and `0.9.4` (which followed the internal node-sdk version) are deprecated on npm in favor of `0.15.0`. The `repackage-sdk.mjs` script's `npm-version-override` arg is retained but its expected use is just "set the version to the upstream CLI tag" — no patch-bump arithmetic.
+
+---
+
+## @moonshot-ai/kimi-code@0.17.1  (← 0.17.0)
+
+**node-sdk public interface: NO change.** node-sdk `package.json` stays at `0.9.4` (bumped in 0.17.0); `src/index.ts` exports unchanged.
+
+**App / CLI patches** (not consumed by SDK hosts directly, but shipped in same release):
+- Prevent web login dialog from closing when clicking the backdrop (`#861`).
+- Stop the background local server from locking the directory it was started in (`#860`).
+- Fix the local server failing to start in the background on the native binary (`#860`).
+- Group the default model dropdown in web settings by provider (`#861`).
+
+**Slock consumer impact:** drop-in patch from `0.17.0`. No daemon code change required.
+
+---
+
+## @moonshot-ai/kimi-code@0.17.0  (← 0.16.0)
+
+**node-sdk public interface: ADDITIVE.** node-sdk `package.json` bumped `0.9.3` → `0.9.4` (first internal version change since `0.9.3`). New public exports from `src/index.ts`:
+
+- `loadRuntimeConfigSafe` — host-side safe config reader (returns parsed `KimiConfig` + diagnostics, doesn't throw on bad config).
+- `resolveConfigPath` — sync helper that returns the canonical `<kimiHome>/config.toml` path.
+
+Both exposed for hosts (e.g. CLI's server telemetry bootstrap) that need to inspect config without spinning up a full `KimiCore` / RPC. Existing imports keep working.
+
+**Major upstream feature: server-hosted web UI** (`#625`):
+- New CLI commands `kimi server` (start/stop/manage local server) + `kimi web` (open server-hosted web UI).
+- Server REST + WebSocket APIs for the web client.
+- `protocol/src/events.ts` +725 lines (new event classes for server↔web wire protocol).
+- `protocol/src/ws-control.ts` +386 lines (new ws-control surface).
+- New REST surfaces: snapshot, terminal, skill, modelCatalog, config, connection.
+- **NOT consumed by Slock daemon's in-process kimi-sdk runtime** — we drive the SDK directly via `KimiHarness` / `Session`, the agent face is Slock, not the new bundled web UI.
+
+**Other upstream changes:**
+- `agent-core@0.13.x → ?`: many bundled-impl improvements (see CHANGELOG); upstream-version diffs covered by tsdown bundle in `dist`.
+- `kosong / kaos / oauth`: bug fixes and protocol additions (see CHANGELOG).
+
+**Slock consumer impact:**
+- **Drop-in bump from `0.16.0`** — public SDK API stays compatible (additive only).
+- New `loadRuntimeConfigSafe` + `resolveConfigPath` are useful for our daemon's `detectKimiSdkModels` (`packages/daemon/src/drivers/kimi-sdk.ts`) which currently does a narrow regex scan; a follow-up could replace the scan with `loadRuntimeConfigSafe(resolveConfigPath())` for cleaner config parsing and richer diagnostics. NOT required for `0.17.x` adoption — the existing scan still works.
+- The new server/web feature surface (`kimi server`/`kimi web`/REST/WS) is **not on the Slock kimi-sdk runtime path** and ships as additional CLI surface only. No daemon driver change required to consume `0.17.x`.
+- ⚠️ **RS-004 closed-mapping note:** if a future Slock daemon path ever subscribes to `KimiCore` event surface (the protocol-package event classes that ship with `0.17.x`), the daemon's `KimiSdkEvent` taxonomy in `packages/daemon/src/drivers/kimi-sdk.ts` would need extension per RS-004 (closed-mapping: each new event class → explicit map or drop, no wildcard). Current daemon's `KimiHarness` / `Session` event surface (assistant/thinking/tool/turn/compaction/agent.status/...) is unchanged in `0.17.x`, so RS-004 holds; this is a forward-looking flag for the helper-PR follow-up.
 
 ---
 
