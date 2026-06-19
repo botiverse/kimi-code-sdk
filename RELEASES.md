@@ -13,7 +13,8 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 
 | upstream CLI tag (mirror) | npm `@botiverse/kimi-code-sdk@` |
 | --- | --- |
-| `@moonshot-ai/kimi-code@0.17.1` | `0.17.1` (current; published 2026-06-18) |
+| `@moonshot-ai/kimi-code@0.18.0` | `0.18.0` (current; published 2026-06-19) |
+| `@moonshot-ai/kimi-code@0.17.1` | `0.17.1` (published 2026-06-18) |
 | `@moonshot-ai/kimi-code@0.17.0` | `0.17.0` (published 2026-06-18) |
 | `@moonshot-ai/kimi-code@0.16.0` | `0.16.0` (published 2026-06-17) |
 | `@moonshot-ai/kimi-code@0.15.0` | `0.15.0` (published 2026-06-16) |
@@ -26,6 +27,33 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 - Upstream doesn't release → **we don't publish**. If we ever need to ship a fix to our repackage tooling, it rides the next upstream release.
 
 Rationale: 1:1 alignment with the upstream tag consumers can find in Kimi Code release notes is more controllable than maintaining an independent semver. Earlier `0.9.3` and `0.9.4` (which followed the internal node-sdk version) are deprecated on npm in favor of `0.15.0`. The `repackage-sdk.mjs` script's `npm-version-override` arg is retained but its expected use is just "set the version to the upstream CLI tag" — no patch-bump arithmetic.
+
+---
+
+## @moonshot-ai/kimi-code@0.18.0  (← 0.17.1)
+
+**node-sdk public interface: ADDITIVE.** node-sdk `package.json` stays at `0.9.4`. New optional `sessionStartedProperties?: TelemetryProperties` field on three host surfaces:
+
+- `KimiHarnessOptions.sessionStartedProperties` — host-default extra fields merged into every `session_started` telemetry event for that harness instance.
+- `CreateSessionOptions.sessionStartedProperties` — per-session extra fields (overrides harness-default for that one session, but is itself overridden by canonical fields).
+- `ResumeSessionInput.sessionStartedProperties` — same shape, applied on resume.
+
+Merge precedence in `KimiHarness.trackSessionStarted` is fixed: harness-default → per-session → canonical fields. Canonical fields (`client_name`, `client_version`, `ui_mode`, etc.) always win, so callers cannot accidentally clobber them. Existing imports keep working.
+
+**App / CLI features** (not consumed by SDK hosts directly, but shipped in same release):
+- Web: scroll-up lazy loading for older session messages + new-messages pill fix (`#893`).
+- Web: session search (`#895`).
+- Web: paginated session list on load (`#882`).
+- Web: drop workspace session count after archiving the last session (`#896`).
+- Web: redesigned OAuth login dialog (`#867`).
+- Web: server version shown in settings (`#889`).
+- Web: improved slash menu and skill editing (`#878`); highlighted slash command stays visible in long menus (`#881`).
+- Goal: guided goal authoring (`#839`).
+- Server: report host kimi-code CLI version in `/meta` (`#879`).
+- agent-core: cap AgentSwarm concurrency via env var (`#888`).
+- Telemetry: merge duplicate session-start and goal events (`#885`).
+
+**Slock consumer impact:** drop-in additive minor from `0.17.1`. Existing daemon code keeps working. The new `sessionStartedProperties` knob is purely additive — daemon may opt in later if we want host-side telemetry tagging on Kimi-driven sessions, but no change required to ship `0.18.0`.
 
 ---
 
