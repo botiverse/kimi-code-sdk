@@ -13,7 +13,8 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 
 | upstream CLI tag (mirror) | npm `@botiverse/kimi-code-sdk@` |
 | --- | --- |
-| `@moonshot-ai/kimi-code@0.18.0` | `0.18.0` (current; published 2026-06-19) |
+| `@moonshot-ai/kimi-code@0.18.0` | `0.18.0-botiverse.0` (current; published 2026-06-20; **mirror-side surface extension** — `LocalKaos` + `Kaos` type re-export) |
+| `@moonshot-ai/kimi-code@0.18.0` | `0.18.0` (published 2026-06-19; pre-extension) |
 | `@moonshot-ai/kimi-code@0.17.1` | `0.17.1` (published 2026-06-18) |
 | `@moonshot-ai/kimi-code@0.17.0` | `0.17.0` (published 2026-06-18) |
 | `@moonshot-ai/kimi-code@0.16.0` | `0.16.0` (published 2026-06-17) |
@@ -22,11 +23,29 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 | `@moonshot-ai/kimi-code@0.14.2` | `0.9.3` (legacy — first npm publish, internal node-sdk version; superseded by `0.15.0`) |
 | _(internal patch-bump experiment)_ | `0.9.4` (legacy — superseded by `0.15.0`) |
 
-**Versioning policy (locked 2026-06-16, tygg msgs=cb736b39 / 9cfb4824 / c1f01b13):** the npm package version **mirrors the upstream Kimi Code CLI tag**. Rule:
-- Upstream cuts a new CLI release tag → we publish the same version (e.g. `@moonshot-ai/kimi-code@0.16.0` → `@botiverse/kimi-code-sdk@0.16.0`).
-- Upstream doesn't release → **we don't publish**. If we ever need to ship a fix to our repackage tooling, it rides the next upstream release.
+**Versioning policy (revised 2026-06-20, tygg #proj-runtime:96f626f3 msg=7db90df7):** mirror-side changes that extend the published surface beyond what upstream `node-sdk/src/index.ts` exposes carry a `-botiverse.<n>` pre-release suffix on top of the upstream tag. Rule:
+- **Pure repackage** (no surface change beyond `node-sdk/src/index.ts`): mirror version = upstream CLI tag verbatim. Established in the original 2026-06-16 lock (tygg msgs=cb736b39 / 9cfb4824 / c1f01b13).
+- **Mirror-side surface extension** (e.g. re-exporting symbols upstream did not export, like `LocalKaos`): mirror version = `<upstream-tag>-botiverse.<n>` so `npm install @botiverse/kimi-code-sdk` defaults to the pure mirror, and consumers must explicitly pin to the extended version (`@0.18.0-botiverse.0`) when they need the additional surface. This makes the mirror-side change visible in version metadata rather than silently shipping a different shape under the upstream tag's name.
+- Upstream doesn't release → **we don't publish a pure repackage**. We may still publish a `-botiverse.<n>` pre-release against the most recent upstream tag if a mirror-side surface extension is needed.
 
-Rationale: 1:1 alignment with the upstream tag consumers can find in Kimi Code release notes is more controllable than maintaining an independent semver. Earlier `0.9.3` and `0.9.4` (which followed the internal node-sdk version) are deprecated on npm in favor of `0.15.0`. The `repackage-sdk.mjs` script's `npm-version-override` arg is retained but its expected use is just "set the version to the upstream CLI tag" — no patch-bump arithmetic.
+Rationale: 1:1 alignment with the upstream tag is preserved as the default install target so consumers reading the upstream Kimi Code release notes get exactly the upstream-shape mirror. Mirror-side surface additions are deliberate Botiverse-side changes that should not pretend to be upstream — the pre-release suffix surfaces that distinction. Earlier `0.9.3` and `0.9.4` (which followed the internal node-sdk version) are deprecated on npm in favor of `0.15.0`. The `repackage-sdk.mjs` script's `npm-version-override` arg is the mechanism for the suffix: pass `0.18.0-botiverse.0` when cutting an extended release.
+
+---
+
+## @botiverse/kimi-code-sdk@0.18.0-botiverse.0  (mirror-side surface extension on top of upstream `@moonshot-ai/kimi-code@0.18.0`)
+
+**Mirror-side change only — upstream node-sdk surface unchanged.** The repackaged dist now re-exports `LocalKaos` (runtime) and `Kaos` (TypeScript type). The implementation was already inlined into upstream's `dist/index.mjs` and `dist/index.d.mts` but was not in upstream's published export list; the Botiverse repackage script (`scripts/repackage-sdk.mjs`) extends the trailing `export { ... }` block in place and appends `export { LocalKaos };` + `export type { Kaos };` to `index.d.mts`.
+
+**Why:** Slock daemon's Kimi-SDK driver (in-process runtime) needs to inject per-agent CLI wrapper PATH into Kimi tool execution without polluting the daemon's own `process.env.PATH`. The supported path is `LocalKaos.create().then(k => k.withCwd(workdir).withEnv({ PATH: <agent-wrapper-dir>:$PATH }))`, then `harness.createSession({ ..., kaos })`. Without re-exporting `LocalKaos`, daemon callers cannot construct that kaos and have to fall back to absolute wrapper paths in the agent prompt, which proved unstable across long Kimi sessions (tygg/Hao #proj-runtime:96f626f3 6/20).
+
+**Surface delta vs `@botiverse/kimi-code-sdk@0.18.0`:**
+- New runtime export: `LocalKaos` (class with `create()` static factory + `withCwd` / `withEnv` chainable methods).
+- New type export: `Kaos` (interface from `@moonshot-ai/kaos`, used as `KimiHarnessOptions.kaos` / `CreateSessionOptions.kaos` / `ResumeSessionInput.kaos`).
+- Everything else identical to `@botiverse/kimi-code-sdk@0.18.0`.
+
+**Verification:** new `scripts/verify-mirror-surface.mjs` asserts the published dist (a) has `LocalKaos` in the trailing JS export list, (b) re-exports `LocalKaos` + `Kaos` type in the `.d.mts`, (c) bundle still contains the `LocalKaos` implementation, (d) upstream symbols (`KimiHarness`, `Session`, `createKimiHarness`, `KimiError`) remain exported, and (e) when peer deps are installed, `import { LocalKaos } from <dist>` resolves to a class whose `.create()` returns a kaos with `.withEnv()`.
+
+**Slock consumer impact:** opt-in. Default `pnpm add @botiverse/kimi-code-sdk` still resolves to the pure-repackage `0.18.0`. Daemon Kimi-SDK driver explicitly pins to `0.18.0-botiverse.0` to consume the new surface; older callers are unaffected.
 
 ---
 

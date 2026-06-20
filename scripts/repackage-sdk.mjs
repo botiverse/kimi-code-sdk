@@ -12,6 +12,15 @@
 // RELEASES.md is the truth.
 //
 // Produces <out-dir> = a publishable npm package: dist/ + renamed package.json + LICENSE + NOTICE + README.
+//
+// Mirror-side surface additions (tygg/Hao 2026-06-20 #proj-runtime:96f626f3): when
+// an upstream `kimi-code` release ships a fully-bundled `LocalKaos` / `Kaos`
+// implementation but does not re-export them from `node-sdk/src/index.ts`, we
+// expose those symbols at the mirror's published top level. Consumers (Slock
+// daemon Kimi-SDK driver) need `LocalKaos.create().withEnv({ PATH })` to inject
+// per-agent CLI wrapper PATH into Kimi tool execution without daemon-wide env
+// pollution. The implementation is already inlined into upstream dist; we only
+// extend the published export list.
 import { readFileSync, writeFileSync, cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -54,6 +63,7 @@ pkg.botiverse = { upstream: upstreamName, kimiRelease: kimiTag || null, source: 
 if (existsSync(outDir)) rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 cpSync(join(srcDir, 'dist'), join(outDir, 'dist'), { recursive: true });
+extendDistKaosSurface(join(outDir, 'dist'));
 writeFileSync(join(outDir, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
 // Attribution: upstream LICENSE (MIT) preserved + our NOTICE.
 let licCopied = false;
@@ -72,3 +82,59 @@ writeFileSync(join(outDir, 'README.md'),
   `# @botiverse/kimi-code-sdk\n\nBuilt repackage of \`${upstreamName}\`${kimiTag ? ` (kimi-code ${kimiTag})` : ''} for Slock/Botiverse.\n` +
   `Read-only mirror + release notes: https://github.com/botiverse/kimi-code-sdk\n\n> Not affiliated with Moonshot AI. MIT (see LICENSE).\n`);
 console.log(`repackaged ${upstreamName}@${version} -> @botiverse/kimi-code-sdk@${version} at ${outDir}`);
+
+// ── Mirror-side Kaos surface extension ──────────────────────────────────────
+//
+// Upstream's `node-sdk/dist/index.mjs` bundles `LocalKaos` (along with the rest
+// of the kaos package) but does not include it in its trailing `export { ... }`
+// statement. Same for `index.d.mts` — the `Kaos` interface is declared but
+// never publicly exported. The SDK consumer (Slock daemon's Kimi-SDK driver)
+// needs both symbols to inject per-agent CLI wrapper PATH via
+// `LocalKaos.create().withEnv({ PATH })` and pass the result through
+// `harness.createSession({ kaos })`.
+//
+// We extend the dist's published export surface in-place: append `LocalKaos`
+// to the trailing JS export list and add `export { LocalKaos };` +
+// `export type { Kaos };` to the .d.mts. We do not modify or rebundle any
+// implementation; the bundled `var LocalKaos = class LocalKaos { ... }` and
+// `declare interface Kaos { ... }` already exist in the upstream dist.
+//
+// Failure mode: if a future upstream dist refactor drops `LocalKaos` from the
+// bundle, or splits the export-tail format, the assertions below fail closed
+// so the publish-sdk workflow refuses to ship a broken mirror.
+function extendDistKaosSurface(distDir) {
+  const mjsPath = join(distDir, 'index.mjs');
+  const dmtsPath = join(distDir, 'index.d.mts');
+
+  const mjs = readFileSync(mjsPath, 'utf8');
+  if (!/var LocalKaos = class LocalKaos\b/.test(mjs)) {
+    throw new Error('repackage: upstream dist/index.mjs no longer bundles LocalKaos; refusing to extend surface');
+  }
+  // Find the trailing top-level `export { ... };` line (last one in file).
+  // tsdown emits exactly one trailing brace-list export for the entry module.
+  const exportTailRe = /(^export \{[^}]*?)(\s*\}\s*;?\s*)$/m;
+  const match = mjs.match(exportTailRe);
+  if (!match) {
+    throw new Error('repackage: upstream dist/index.mjs has no recognisable trailing `export { ... }` block');
+  }
+  if (/\bLocalKaos\b/.test(match[1])) {
+    throw new Error('repackage: dist already exports LocalKaos; remove this mirror-side patch');
+  }
+  const extendedMjs = mjs.replace(exportTailRe, `$1, LocalKaos$2`);
+  writeFileSync(mjsPath, extendedMjs);
+
+  const dmts = readFileSync(dmtsPath, 'utf8');
+  if (!/declare interface Kaos\b/.test(dmts)) {
+    throw new Error('repackage: upstream dist/index.d.mts no longer declares Kaos interface');
+  }
+  if (!/declare class LocalKaos\b/.test(dmts) && !/declare const LocalKaos\b/.test(dmts) && !/declare interface LocalKaos\b/.test(dmts)) {
+    throw new Error('repackage: upstream dist/index.d.mts no longer declares LocalKaos');
+  }
+  if (/\bexport\s*\{\s*LocalKaos\b/.test(dmts) || /\bexport type\s*\{\s*Kaos\b/.test(dmts)) {
+    throw new Error('repackage: dist d.mts already exports Kaos surface; remove this mirror-side patch');
+  }
+  const extendedDmts = dmts.trimEnd() + `\n\n// Botiverse mirror surface extension — see scripts/repackage-sdk.mjs.\nexport { LocalKaos };\nexport type { Kaos };\n`;
+  writeFileSync(dmtsPath, extendedDmts);
+
+  console.log('repackage: extended dist with LocalKaos export and Kaos type re-export');
+}
