@@ -127,13 +127,19 @@ function extendDistKaosSurface(distDir) {
   if (!/declare interface Kaos\b/.test(dmts)) {
     throw new Error('repackage: upstream dist/index.d.mts no longer declares Kaos interface');
   }
-  if (!/declare class LocalKaos\b/.test(dmts) && !/declare const LocalKaos\b/.test(dmts) && !/declare interface LocalKaos\b/.test(dmts)) {
-    throw new Error('repackage: upstream dist/index.d.mts no longer declares LocalKaos');
-  }
   if (/\bexport\s*\{\s*LocalKaos\b/.test(dmts) || /\bexport type\s*\{\s*Kaos\b/.test(dmts)) {
     throw new Error('repackage: dist d.mts already exports Kaos surface; remove this mirror-side patch');
   }
-  const extendedDmts = dmts.trimEnd() + `\n\n// Botiverse mirror surface extension — see scripts/repackage-sdk.mjs.\nexport { LocalKaos };\nexport type { Kaos };\n`;
+  // Upstream's bundled .d.mts declares the `Kaos` interface but tree-shakes the
+  // `LocalKaos` class type declaration (the implementation is still bundled in
+  // .mjs). Append a minimal class declaration that matches the public surface
+  // from `packages/kaos/src/local.ts:157` (`export class LocalKaos implements
+  // Kaos { static async create(): Promise<LocalKaos> }`). The class
+  // `implements Kaos`, so all interface members are inherited from the
+  // already-declared `Kaos` interface. Only `withCwd` / `withEnv` need
+  // explicit re-declaration to tighten the return type from `Kaos` to
+  // `LocalKaos` (so chained calls preserve the concrete type).
+  const extendedDmts = dmts.trimEnd() + `\n\n// Botiverse mirror surface extension — see scripts/repackage-sdk.mjs.\n// Minimal type declaration; runtime implementation is bundled in dist/index.mjs.\ndeclare class LocalKaos implements Kaos {\n  static create(): Promise<LocalKaos>;\n  readonly name: string;\n  readonly osEnv: Kaos['osEnv'];\n  pathClass(): 'posix' | 'win32';\n  normpath(path: string): string;\n  gethome(): string;\n  getcwd(): string;\n  chdir(path: string): Promise<void>;\n  withCwd(cwd: string): LocalKaos;\n  withEnv(env: Record<string, string>): LocalKaos;\n  stat: Kaos['stat'];\n  iterdir: Kaos['iterdir'];\n  glob: Kaos['glob'];\n  readBytes: Kaos['readBytes'];\n  readText: Kaos['readText'];\n  readLines: Kaos['readLines'];\n  writeBytes: Kaos['writeBytes'];\n  writeText: Kaos['writeText'];\n  mkdir: Kaos['mkdir'];\n  exec: Kaos['exec'];\n  execWithEnv: Kaos['execWithEnv'];\n}\nexport { LocalKaos };\nexport type { Kaos };\n`;
   writeFileSync(dmtsPath, extendedDmts);
 
   console.log('repackage: extended dist with LocalKaos export and Kaos type re-export');
