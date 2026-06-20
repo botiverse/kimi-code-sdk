@@ -118,10 +118,23 @@ jobs:
         working-directory: ./.out-sdk
         run: |
           npm pack
+          # Pre-release versions (e.g. `0.18.0-botiverse.0`) require an explicit
+          # dist-tag so they don't move `latest`. Mirror-side surface extensions
+          # carry the `-botiverse.<n>` suffix per RELEASES.md versioning policy
+          # (revised 2026-06-20). Stable upstream-tag publishes still get
+          # `latest` by default.
+          NPM_VER="$(node -p 'require("./package.json").version')"
+          PUBLISH_TAG_ARGS=""
+          case "$NPM_VER" in
+            *-botiverse.*) PUBLISH_TAG_ARGS="--tag botiverse" ;;
+            *-*)           PUBLISH_TAG_ARGS="--tag pre" ;;
+            *)             PUBLISH_TAG_ARGS="" ;;
+          esac
           if [ "${{ steps.resolve.outputs.dry_run }}" = "true" ]; then
-            echo "DRY RUN — publish --dry-run only"
-            npm publish --dry-run --access public
+            echo "DRY RUN — publish --dry-run only (tag: ${PUBLISH_TAG_ARGS:-latest})"
+            npm publish --dry-run --access public $PUBLISH_TAG_ARGS
           else
             # OIDC trusted publishing: no NODE_AUTH_TOKEN; npm resolves identity from id-token.
-            npm publish --access public --provenance
+            echo "publishing $NPM_VER (tag: ${PUBLISH_TAG_ARGS:-latest})"
+            npm publish --access public --provenance $PUBLISH_TAG_ARGS
           fi
