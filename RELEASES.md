@@ -13,8 +13,11 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 
 | upstream CLI tag (mirror) | npm `@botiverse/kimi-code-sdk@` |
 | --- | --- |
-| `@moonshot-ai/kimi-code@0.18.0` | `0.18.0-botiverse.0` (current; published 2026-06-20; **mirror-side surface extension** — `LocalKaos` + `Kaos` type re-export) |
-| `@moonshot-ai/kimi-code@0.18.0` | `0.18.0` (published 2026-06-19; pre-extension) |
+| `@moonshot-ai/kimi-code@0.19.2` | `0.19.2` (**current `latest`**; 2026-06-24; pure mirror) **and** `0.19.2-botiverse.0` (**current `botiverse` tag**; 2026-06-24; surface extension — `LocalKaos` + `Kaos`) |
+| `@moonshot-ai/kimi-code@0.19.1` | _(mirrored, not separately published — superseded by 0.19.2)_ |
+| `@moonshot-ai/kimi-code@0.19.0` | _(mirrored, not separately published — superseded by 0.19.2)_ |
+| `@moonshot-ai/kimi-code@0.18.0` | `0.18.0-botiverse.0` (2026-06-20; surface extension) |
+| `@moonshot-ai/kimi-code@0.18.0` | `0.18.0` (2026-06-19; pre-extension pure) |
 | `@moonshot-ai/kimi-code@0.17.1` | `0.17.1` (published 2026-06-18) |
 | `@moonshot-ai/kimi-code@0.17.0` | `0.17.0` (published 2026-06-18) |
 | `@moonshot-ai/kimi-code@0.16.0` | `0.16.0` (published 2026-06-17) |
@@ -29,6 +32,20 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 - Upstream doesn't release → **we don't publish a pure repackage**. We may still publish a `-botiverse.<n>` pre-release against the most recent upstream tag if a mirror-side surface extension is needed.
 
 Rationale: 1:1 alignment with the upstream tag is preserved as the default install target so consumers reading the upstream Kimi Code release notes get exactly the upstream-shape mirror. Mirror-side surface additions are deliberate Botiverse-side changes that should not pretend to be upstream — the pre-release suffix surfaces that distinction. Earlier `0.9.3` and `0.9.4` (which followed the internal node-sdk version) are deprecated on npm in favor of `0.15.0`. The `repackage-sdk.mjs` script's `npm-version-override` arg is the mechanism for the suffix: pass `0.18.0-botiverse.0` when cutting an extended release.
+
+---
+
+## @botiverse/kimi-code-sdk@0.19.2 + @0.19.2-botiverse.0  (upstream `@moonshot-ai/kimi-code@0.19.2`)
+
+**Published 2026-06-24. Both variants shipped this release** (tygg "Pure mirror版本和repackage版本都发", #proj-runtime:a2c38238):
+- `0.19.2` → `latest` (pure mirror, upstream surface verbatim).
+- `0.19.2-botiverse.0` → `botiverse` tag (adds `LocalKaos` + `Kaos` re-export, identical extension to 0.18.0-botiverse.0).
+
+**node-sdk public interface: NO detectable surface change vs 0.18.0.** The published package.json public fields (`exports` / `bin` / runtime `dependencies` / `types`) are byte-identical to 0.18.0 (only `version` differs); README unchanged; the repackage + LocalKaos surface-extract apply cleanly (no structural drift in the dist bundle's export tail or `Kaos`/`LocalKaos` declarations). This is an implementation/bundle refresh (0.18.0 → 0.19.0 → 0.19.1 → 0.19.2); upstream is a minified bundle so per-symbol behavioral diffs aren't enumerable from the tarball, but the **exported SDK shape is unchanged**. 0.19.0/0.19.1 were mirrored to the repo but not separately published (superseded by 0.19.2).
+
+**Slock consumer impact:** drop-in. Default `pnpm add @botiverse/kimi-code-sdk` now resolves to `0.19.2` (was 0.18.0). Daemon Kimi-SDK driver currently pins `0.18.0-botiverse.0`; it can bump to `0.19.2-botiverse.0` when convenient (same surface, refreshed bundle) — no code change required by the surface.
+
+**Tooling note:** `scripts/repackage-sdk.mjs` gained a **pure-mode** (commit `419e034`): the LocalKaos/Kaos extension is now gated on the `-botiverse` version suffix, so a pure `latest` and an extended `-botiverse.<n>` can be cut from the same source in one release. Before this, the extension was unconditional (PR #2), which had made a pure `latest` repackage impossible.
 
 ---
 
