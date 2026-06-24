@@ -35,6 +35,21 @@ if (npmVersionOverride && npmVersionOverride !== upstreamVersion) {
   console.log(`note: overriding npm version ${upstreamVersion} -> ${npmVersionOverride}`);
 }
 
+// Surface mode is derived from the version suffix (RELEASES.md versioning policy):
+//   - pure mirror  (e.g. `0.19.2`)            -> publishes to `latest`, upstream
+//                                                 surface verbatim, NO mirror-side
+//                                                 extension. This is the default
+//                                                 install target.
+//   - extended     (e.g. `0.19.2-botiverse.0`) -> publishes under `--tag botiverse`,
+//                                                 adds the LocalKaos/Kaos re-export
+//                                                 (extendDistKaosSurface below).
+// Reusing the `-botiverse` suffix as the signal means the same version metadata
+// that already routes the npm dist-tag (see publish-sdk.yml) also selects the
+// surface, so the two can never disagree. Before PR #2 the extension was
+// unconditional, which made a pure `latest` repackage impossible — this restores
+// it (tygg "Pure mirror版本和repackage版本都发" #proj-runtime:a2c38238 2026-06-24).
+const isExtendedSurface = /-botiverse\b/.test(version);
+
 // Rebrand identity; keep upstream's runtime deps + bin/exports untouched (dist is bundled).
 pkg.name = '@botiverse/kimi-code-sdk';
 pkg.version = version;
@@ -63,7 +78,11 @@ pkg.botiverse = { upstream: upstreamName, kimiRelease: kimiTag || null, source: 
 if (existsSync(outDir)) rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 cpSync(join(srcDir, 'dist'), join(outDir, 'dist'), { recursive: true });
-extendDistKaosSurface(join(outDir, 'dist'));
+if (isExtendedSurface) {
+  extendDistKaosSurface(join(outDir, 'dist'));
+} else {
+  console.log(`repackage: pure mirror (${version}) — no mirror-side surface extension`);
+}
 writeFileSync(join(outDir, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
 // Attribution: upstream LICENSE (MIT) preserved + our NOTICE.
 let licCopied = false;
