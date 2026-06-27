@@ -13,7 +13,9 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 
 | upstream CLI tag (mirror) | npm `@botiverse/kimi-code-sdk@` |
 | --- | --- |
-| `@moonshot-ai/kimi-code@0.19.2` | `0.19.2` (**current `latest`**; 2026-06-24; pure mirror) **and** `0.19.2-botiverse.0` (**current `botiverse` tag**; 2026-06-24; surface extension — `LocalKaos` + `Kaos`) |
+| `@moonshot-ai/kimi-code@0.20.1` | `0.20.1` (**current `latest`**; 2026-06-27; pure mirror) **and** `0.20.1-botiverse.0` (**current `botiverse` tag**; 2026-06-27; surface extension — `LocalKaos` + `Kaos`) — _additive: new KimiAuth feedback-upload surface_ |
+| `@moonshot-ai/kimi-code@0.20.0` | `0.20.0` (2026-06-26; pure mirror) **and** `0.20.0-botiverse.0` (2026-06-26; surface extension) |
+| `@moonshot-ai/kimi-code@0.19.2` | `0.19.2` (2026-06-24; pure mirror) **and** `0.19.2-botiverse.0` (2026-06-24; surface extension — `LocalKaos` + `Kaos`) |
 | `@moonshot-ai/kimi-code@0.19.1` | _(mirrored, not separately published — superseded by 0.19.2)_ |
 | `@moonshot-ai/kimi-code@0.19.0` | _(mirrored, not separately published — superseded by 0.19.2)_ |
 | `@moonshot-ai/kimi-code@0.18.0` | `0.18.0-botiverse.0` (2026-06-20; surface extension) |
@@ -32,6 +34,29 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 - Upstream doesn't release → **we don't publish a pure repackage**. We may still publish a `-botiverse.<n>` pre-release against the most recent upstream tag if a mirror-side surface extension is needed.
 
 Rationale: 1:1 alignment with the upstream tag is preserved as the default install target so consumers reading the upstream Kimi Code release notes get exactly the upstream-shape mirror. Mirror-side surface additions are deliberate Botiverse-side changes that should not pretend to be upstream — the pre-release suffix surfaces that distinction. Earlier `0.9.3` and `0.9.4` (which followed the internal node-sdk version) are deprecated on npm in favor of `0.15.0`. The `repackage-sdk.mjs` script's `npm-version-override` arg is the mechanism for the suffix: pass `0.18.0-botiverse.0` when cutting an extended release.
+
+---
+
+## @botiverse/kimi-code-sdk@0.20.1 + @0.20.1-botiverse.0  (upstream `@moonshot-ai/kimi-code@0.20.1`)
+
+**Published 2026-06-27. Both variants shipped** (OIDC pipeline, dry-run then real each):
+- `0.20.1` → `latest` (pure mirror).
+- `0.20.1-botiverse.0` → `botiverse` tag (adds `LocalKaos` + `Kaos` re-export).
+
+**node-sdk public interface vs 0.20.0: ADDITIVE — new KimiAuth feedback-upload surface.** `packages/node-sdk/src/auth.ts` (+89) + `src/index.ts` (+6 re-exports), 0 deletions. New exported types/interfaces: `KimiAuthCreateFeedbackUploadUrlInput`, `KimiAuthCreateFeedbackUploadUrlOk`, `KimiAuthCreateFeedbackUploadUrlResult`, `KimiAuthCompleteFeedbackUploadInput`, `KimiAuthCompleteFeedbackUploadPart`, `KimiAuthFeedbackUploadPart` (+ re-exported `FetchCompleteFeedbackUploadResult` / `FetchFeedbackUploadError`); new `KimiAuth` methods `createFeedbackUploadUrl` / `completeFeedbackUpload`. `exports` / `bin` / runtime `dependencies` / `types` / `engines` byte-identical to 0.20.0 (only `version`); existing export shape unchanged. **No breaking changes** — purely additive. node-sdk internal version 0.10.0 → 0.10.1 (decoupled; published as 0.20.1 per align-with-CLI policy).
+
+**Slock consumer impact:** drop-in additive. Default `pnpm add @botiverse/kimi-code-sdk` resolves to `0.20.1`. Daemon Kimi-SDK driver currently pins `0.20.0-botiverse.0` (PR #3420); can bump to `0.20.1-botiverse.0` when convenient (additive surface, no code change required). The new feedback-upload surface is opt-in.
+
+---
+
+## @botiverse/kimi-code-sdk@0.20.0 + @0.20.0-botiverse.0  (upstream `@moonshot-ai/kimi-code@0.20.0`)
+
+**Published 2026-06-26. Both variants shipped** (manual sync — auto-sync hit the `SYNC_PAT` workflow-scope gap when upstream changed its own `.github/workflows/ci.yml`; tygg msg=62c805dc "你先手动处理"). _(RELEASES.md / GitHub Release backfilled 2026-06-27 alongside 0.20.1; npm publish itself was 2026-06-26.)_
+- `0.20.0` → `latest` (pure mirror); `0.20.0-botiverse.0` → `botiverse` tag (surface extension).
+
+**node-sdk public interface vs 0.19.2: NO detectable surface change.** package.json public fields (`exports` / `bin` / runtime `dependencies` / `types`) + `src/index.ts` export surface identical to 0.19.2; implementation/bundle refresh only.
+
+**Slock consumer impact:** drop-in. Daemon driver bumped 0.19.2-botiverse.0 → 0.20.0-botiverse.0 (PR #3420).
 
 ---
 
