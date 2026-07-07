@@ -13,7 +13,7 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 
 | upstream CLI tag (mirror) | npm `@botiverse/kimi-code-sdk@` |
 | --- | --- |
-| `@moonshot-ai/kimi-code@0.20.1` | `0.20.1` (**current `latest`**; 2026-06-27; pure mirror) **and** `0.20.1-botiverse.0` (**current `botiverse` tag**; 2026-06-27; surface extension — `LocalKaos` + `Kaos`) — _additive: new KimiAuth feedback-upload surface_ |
+| `@moonshot-ai/kimi-code@0.20.1` | `0.20.1` (**current `latest`**; 2026-06-27; pure mirror) **and** `0.20.1-botiverse.0` (2026-06-27; surface extension — `LocalKaos` + `Kaos`) **and** `0.20.1-botiverse.1` (**new `botiverse` tag**; 2026-07-07; surface extension `LocalKaos`+`Kaos` **+ `roleAdditional`** main-agent system-prompt threading — compaction-safe standing prompt; patch-branch `kai/0.20.1-botiverse-roleadditional`) |
 | `@moonshot-ai/kimi-code@0.20.0` | `0.20.0` (2026-06-26; pure mirror) **and** `0.20.0-botiverse.0` (2026-06-26; surface extension) |
 | `@moonshot-ai/kimi-code@0.19.2` | `0.19.2` (2026-06-24; pure mirror) **and** `0.19.2-botiverse.0` (2026-06-24; surface extension — `LocalKaos` + `Kaos`) |
 | `@moonshot-ai/kimi-code@0.19.1` | _(mirrored, not separately published — superseded by 0.19.2)_ |
@@ -34,6 +34,20 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 - Upstream doesn't release → **we don't publish a pure repackage**. We may still publish a `-botiverse.<n>` pre-release against the most recent upstream tag if a mirror-side surface extension is needed.
 
 Rationale: 1:1 alignment with the upstream tag is preserved as the default install target so consumers reading the upstream Kimi Code release notes get exactly the upstream-shape mirror. Mirror-side surface additions are deliberate Botiverse-side changes that should not pretend to be upstream — the pre-release suffix surfaces that distinction. Earlier `0.9.3` and `0.9.4` (which followed the internal node-sdk version) are deprecated on npm in favor of `0.15.0`. The `repackage-sdk.mjs` script's `npm-version-override` arg is the mechanism for the suffix: pass `0.18.0-botiverse.0` when cutting an extended release.
+
+---
+
+## @botiverse/kimi-code-sdk@0.20.1-botiverse.1  (upstream `@moonshot-ai/kimi-code@0.20.1`)
+
+**Botiverse-side behavior patch on top of `0.20.1-botiverse.0`** (2026-07-07). Patch-branch `kai/0.20.1-botiverse-roleadditional` (SHA `12b24b09`) stacked on the `@moonshot-ai/kimi-code@0.20.1` tag; **deleted once upstream lands**.
+
+**Change:** adds an optional `roleAdditional` on `CreateSessionOptions` / `ResumeSessionInput`, threaded through the rpc payloads (`CreateSessionPayload`/`ResumeSessionPayload`) → core `Session` (create + resume) → `SessionOptions` → `bootstrapAgentProfile` → the **main agent's** `Agent.useProfile` render call → `{{ ROLE_ADDITIONAL }}` in the base system prompt (the renderer already consumed `context.roleAdditional`; the `useProfile` call was silently dropping it — the fix wires that last hop). Rendered every request, outside compressible conversation history, so a standing role protocol **survives context compaction**. Subagent path untouched (they use their own `promptVars.roleAdditional`). Inherits the `0.20.1-botiverse.0` `LocalKaos`/`Kaos` surface extension.
+
+**Why:** the Slock daemon Kimi-SDK driver injects a Raft standing prompt (CLI transport protocol + per-agent wrapper path). The prior first-turn injection was condensed away by Kimi compaction (agent forgot how to message Raft back). `roleAdditional` makes it compaction-safe.
+
+**Verification (publish-form gate):** `pnpm build` → `repackage-sdk.mjs --npm-version-override=0.20.1-botiverse.1` → `npm pack` → clean-dir `npm install` the tarball → live Kimi inference: sentinel codeword present pre AND post `session.compact()` (compactions=1). Confirms the fix is in the **packaged artifact** and survives compaction — not just in the monorepo source tree (a pnpm-patch-only fix does NOT reach published tarballs; this is why we cut a real `-botiverse.1`).
+
+**Slock consumer impact:** additive over `0.20.1-botiverse.0`. Daemon Kimi driver bumps its pin to `0.20.1-botiverse.1` and drops the interim root pnpm-patch (daemon 0.70.3).
 
 ---
 
