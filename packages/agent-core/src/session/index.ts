@@ -74,6 +74,8 @@ export interface SessionOptions {
   readonly appVersion?: string;
   readonly experimentalFlags?: ExperimentalFlagResolver;
   readonly additionalDirs?: readonly string[];
+  /** Long-lived role addendum forwarded into the main agent's base system prompt (survives compaction). */
+  readonly roleAdditional?: string;
 }
 
 export interface SessionSkillConfig {
@@ -470,7 +472,7 @@ export class Session {
       this.options.kimiHomeDir,
       { additionalDirs: this.additionalDirs },
     );
-    agent.useProfile(profile, context);
+    agent.useProfile(profile, { ...context, roleAdditional: this.options.roleAdditional });
     const { agentsMdWarning } = context;
     if (agentsMdWarning !== undefined) {
       this.agentsMdWarning = agentsMdWarning;

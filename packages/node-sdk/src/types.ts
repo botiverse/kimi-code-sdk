@@ -102,6 +102,12 @@ export interface CreateSessionOptions {
   readonly kaos?: Kaos | undefined;
   readonly persistenceKaos?: Kaos | undefined;
   readonly additionalDirs?: readonly string[];
+  /**
+   * Long-lived per-session role addendum rendered into the base system prompt
+   * ({{ ROLE_ADDITIONAL }}) on every request, outside compressible history so it
+   * survives context compaction. Applied to the MAIN agent only.
+   */
+  readonly roleAdditional?: string;
   readonly sessionStartedProperties?: TelemetryProperties;
 }
 
@@ -115,6 +121,8 @@ export interface ResumeSessionInput {
   readonly kaos?: Kaos | undefined;
   readonly persistenceKaos?: Kaos | undefined;
   readonly additionalDirs?: readonly string[];
+  /** Long-lived per-session role addendum; re-applied on resume so it survives compaction. Main agent only. */
+  readonly roleAdditional?: string;
   readonly sessionStartedProperties?: TelemetryProperties;
 }
 

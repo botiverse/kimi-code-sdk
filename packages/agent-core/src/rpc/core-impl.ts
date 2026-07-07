@@ -290,6 +290,7 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
       pluginSessionStarts,
       appVersion: this.appVersion,
       additionalDirs,
+      roleAdditional: options.roleAdditional,
     });
     try {
       session.metadata = {
@@ -422,6 +423,7 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
       pluginSessionStarts,
       appVersion: this.appVersion,
       additionalDirs,
+      roleAdditional: input.roleAdditional,
     });
     let warning: string | undefined;
     try {

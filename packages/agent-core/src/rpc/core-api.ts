@@ -57,6 +57,8 @@ export interface CreateSessionPayload {
   readonly metadata?: JsonObject | undefined;
   readonly mcpServers?: Readonly<Record<string, McpServerConfig>>;
   readonly additionalDirs?: readonly string[];
+  /** Long-lived role addendum → main agent's base system prompt (survives compaction). */
+  readonly roleAdditional?: string;
   readonly client?: ClientTelemetryInfo | undefined;
 }
 
@@ -72,6 +74,8 @@ export interface ResumeSessionPayload {
   readonly sessionId: string;
   readonly mcpServers?: Readonly<Record<string, McpServerConfig>>;
   readonly additionalDirs?: readonly string[];
+  /** Long-lived role addendum re-applied on resume (survives compaction). */
+  readonly roleAdditional?: string;
 }
 
 export interface ReloadSessionPayload {
