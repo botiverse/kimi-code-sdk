@@ -26,7 +26,7 @@ ACP (Agent Client Protocol) doesn't expose a **steering** capability — i.e. yo
 
 | Local patch branch | Based on tag | Reason | Upstream PR | Status |
 |--------------------|--------------|--------|-------------|--------|
-| _(none)_           |              |        |             |        |
+| `kai/0.20.1-botiverse-roleadditional` | `@moonshot-ai/kimi-code@0.20.1` | Thread an optional `roleAdditional` from `CreateSessionOptions`/`ResumeSessionInput` into the **main agent's** base system prompt (`{{ ROLE_ADDITIONAL }}`), rendered every request outside compressible history so a standing role protocol survives context compaction. Slock daemon Kimi driver needs a compaction-safe standing prompt. | _pending (to file)_ | **Active** — published as `@botiverse/kimi-code-sdk@0.20.1-botiverse.1`; delete once upstream lands. |
 
 ## 2. Branch & tag model
 
