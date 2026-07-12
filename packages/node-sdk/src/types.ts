@@ -107,6 +107,12 @@ export interface CreateSessionOptions {
   readonly kaos?: Kaos | undefined;
   readonly persistenceKaos?: Kaos | undefined;
   readonly additionalDirs?: readonly string[];
+  /**
+   * Botiverse mirror: extra standing-prompt text (Raft agent role/context)
+   * threaded into the resolved profile's ROLE_ADDITIONAL slot. Flows via the
+   * createSession spread → session config → Agent → updateSystemPromptFromProfile.
+   */
+  readonly roleAdditional?: string;
   readonly sessionStartedProperties?: TelemetryProperties;
   /**
    * Print-mode (`kimi -p`) only: when the main agent ends a turn while
@@ -130,6 +136,8 @@ export interface ResumeSessionInput {
   readonly additionalDirs?: readonly string[];
   /** Include persisted subagent states in the returned replay snapshot. */
   readonly includeSubagents?: boolean;
+  /** Botiverse mirror: standing-prompt text preserved across resume. */
+  readonly roleAdditional?: string;
   readonly sessionStartedProperties?: TelemetryProperties;
 }
 
