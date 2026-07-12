@@ -81,6 +81,8 @@ export interface SessionOptions {
   /** Owner-scoped [image] limits, threaded from the owning core into every agent. */
   readonly imageLimits?: ImageLimits;
   readonly additionalDirs?: readonly string[];
+  /** Botiverse mirror: standing-prompt (Raft role/context), session-level → every agent's ROLE_ADDITIONAL. */
+  readonly roleAdditional?: string;
   /**
    * Print-mode (`kimi -p`) only: hold the main turn open while background
    * subagents (`kind === 'agent'`) are still running, idle-waiting until they
@@ -183,6 +185,7 @@ export class Session {
   private persistenceKaos: Kaos;
   private additionalDirs: readonly string[];
   private sessionAdditionalDirs: readonly string[] = [];
+  private roleAdditional?: string;
   private readonly pluginCommands: readonly PluginCommandDef[];
   private agentIdCounter = 0;
   private readonly skillsReady: Promise<void>;
@@ -224,6 +227,7 @@ export class Session {
     this.toolKaos = options.kaos;
     this.persistenceKaos = options.persistenceKaos ?? options.kaos;
     this.additionalDirs = normalizeAdditionalDirs(options.additionalDirs ?? []);
+    this.roleAdditional = options.roleAdditional;
     this.pluginCommands = options.pluginCommands ?? [];
     this.skills = new SessionSkillRegistry({
       sessionId: options.id,
@@ -948,6 +952,7 @@ export class Session {
       experimentalFlags: this.experimentalFlags,
       imageLimits: this.imageLimits,
       additionalDirs: parentAgent?.getAdditionalDirs() ?? this.additionalDirs,
+      roleAdditional: this.roleAdditional,
       systemPromptContextProvider: () =>
         prepareSystemPromptContext(
           this.systemContextKaos(agent.kaos.getcwd()),
