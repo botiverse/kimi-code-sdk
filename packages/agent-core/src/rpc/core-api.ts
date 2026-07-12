@@ -61,6 +61,8 @@ export interface CreateSessionPayload {
   readonly metadata?: JsonObject | undefined;
   readonly mcpServers?: Readonly<Record<string, McpServerConfig>>;
   readonly additionalDirs?: readonly string[];
+  /** Botiverse mirror: standing-prompt (Raft role/context) → ROLE_ADDITIONAL. */
+  readonly roleAdditional?: string;
   readonly client?: ClientTelemetryInfo | undefined;
   readonly drainAgentTasksOnStop?: boolean;
   /** Main-agent profile name (`--agent`): a builtin or agentfile-defined profile. */
@@ -95,6 +97,8 @@ export interface ResumeSessionPayload {
    * serializing the entire history over the RPC boundary.
    */
   readonly replayTurnLimit?: number;
+  /** Botiverse mirror: standing-prompt preserved across resume. */
+  readonly roleAdditional?: string;
 }
 
 export interface ReloadSessionPayload {
