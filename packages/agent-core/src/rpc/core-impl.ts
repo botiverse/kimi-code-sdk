@@ -421,6 +421,7 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
       pluginSystemPrompts: this.plugins.enabledSystemPrompts(),
       appVersion: this.appVersion,
       additionalDirs,
+      roleAdditional: options.roleAdditional,
       drainAgentTasksOnStop: options.drainAgentTasksOnStop,
     });
     try {
@@ -584,6 +585,7 @@ export class KimiCore implements PromisableMethods<CoreAPI> {
       pluginSystemPrompts: this.plugins.enabledSystemPrompts(),
       appVersion: this.appVersion,
       additionalDirs,
+      roleAdditional: input.roleAdditional,
     });
     let warning: string | undefined;
     try {
