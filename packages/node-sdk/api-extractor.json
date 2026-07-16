@@ -5,7 +5,8 @@
     "@moonshot-ai/agent-core",
     "@moonshot-ai/kaos",
     "@moonshot-ai/kimi-code-oauth",
-    "@moonshot-ai/kosong"
+    "@moonshot-ai/kosong",
+    "@moonshot-ai/protocol"
   ],
   "compiler": {
     "tsconfigFilePath": "<projectFolder>/tsconfig.api-extractor.json",
