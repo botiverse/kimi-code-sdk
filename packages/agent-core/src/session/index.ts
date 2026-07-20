@@ -107,6 +107,8 @@ export interface AgentMeta {
   readonly type: AgentType;
   readonly parentAgentId?: string | null;
   readonly swarmItem?: string;
+  /** The `roleAdditional` value that was used to render this agent's system prompt. */
+  roleAdditional?: string;
 }
 
 interface ResumedAgent {
@@ -645,6 +647,7 @@ export class Session {
         type,
         parentAgentId,
         swarmItem: options.swarmItem,
+        roleAdditional: this.roleAdditional,
       };
       void this.writeMetadata();
     }
@@ -1040,6 +1043,16 @@ export class Session {
       );
       const result = await agent.resume();
       this.restoreAgentProfileHandle(agent, meta, parent?.agent);
+      // If the session was resumed with a different `roleAdditional` than the
+      // one used to render this agent's persisted system prompt, re-render the
+      // prompt using the restored profile and the fresh context. This keeps the
+      // persisted profile in sync with the new wrapper/standing instructions
+      // without refreshing AGENTS.md/cwd on every resume.
+      if (this.roleAdditional !== meta.roleAdditional) {
+        await agent.refreshSystemPrompt();
+        meta.roleAdditional = this.roleAdditional;
+        void this.writeMetadata();
+      }
       this.agents.set(id, agent);
       return { agent, warning: parent?.warning ?? result.warning };
     } catch (error) {
