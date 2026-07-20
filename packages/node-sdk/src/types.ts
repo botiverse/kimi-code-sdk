@@ -130,6 +130,7 @@ export interface CreateSessionOptions {
    * highest precedence; an invalid file fails session creation.
    */
   readonly agentFiles?: readonly string[];
+  /**
    * Botiverse mirror: extra standing-prompt text (Raft agent role/context)
    * threaded into the resolved profile's ROLE_ADDITIONAL slot. Flows via the
    * createSession spread → session config → Agent → updateSystemPromptFromProfile.
