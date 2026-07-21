@@ -61,6 +61,8 @@ export interface CreateSessionPayload {
   readonly metadata?: JsonObject | undefined;
   readonly mcpServers?: Readonly<Record<string, McpServerConfig>>;
   readonly additionalDirs?: readonly string[];
+  /** Botiverse mirror: standing-prompt (Raft role/context) → ROLE_ADDITIONAL. */
+  readonly roleAdditional?: string;
   readonly client?: ClientTelemetryInfo | undefined;
   readonly drainAgentTasksOnStop?: boolean;
 }
@@ -83,6 +85,8 @@ export interface ResumeSessionPayload {
   readonly additionalDirs?: readonly string[];
   /** Include persisted subagent states in the returned replay snapshot. */
   readonly includeSubagents?: boolean;
+  /** Botiverse mirror: standing-prompt preserved across resume. */
+  readonly roleAdditional?: string;
 }
 
 export interface ReloadSessionPayload {
