@@ -114,6 +114,16 @@ jobs:
       - name: Repackage -> @botiverse/kimi-code-sdk
         run: node .mirror-main/scripts/repackage-sdk.mjs packages/node-sdk ./.out-sdk "${{ steps.resolve.outputs.build_ref }}" "${{ steps.version_check.outputs.override }}"
 
+      - name: Verify mirror surface + roleAdditional patch stack
+        run: |
+          # Install the repackaged dist's peer deps so verify-mirror-surface's
+          # runtime import check actually RUNS. Without node_modules present it
+          # prints "skip runtime import checks" and the strongest assertion in
+          # RELEASES.md (e) silently never executes.
+          (cd .out-sdk && npm install --no-audit --no-fund --omit=dev --silent || true)
+          node .mirror-main/scripts/verify-mirror-surface.mjs ./.out-sdk
+          node .mirror-main/scripts/verify-roleadditional.mjs ./.out-sdk
+
       - name: Pack + publish
         working-directory: ./.out-sdk
         run: |
