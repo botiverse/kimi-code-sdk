@@ -75,8 +75,21 @@ upstream 0.34.0 (no patch at all) still contains that string — 1 occurrence in
 Both gates were proven to fail against a known-unpatched artifact (exit 1) before being
 trusted on a good one (exit 0).
 
-⛔ **Not run for this release: the e2e (codeword + `session.compact()` survival).** It needs a
-DeepSeek key that was not available to the publisher. Recorded here rather than left silent.
+**e2e (codeword + `session.compact()` survival): RUN, PASS.** Against the *published* tarball
+installed into a clean directory (not the source tree), live inference via a DeepSeek provider:
+a sentinel codeword carried in `roleAdditional` was present **both before and after** compaction
+(reply `"ZANZIBAR-7731"` on each side).
+
+Compaction was verified to have actually occurred via `compaction.started` -> `compaction.completed`
+events, **not** via `session.compact()`'s return value — that returns `undefined` here although the
+declaration types it as `Promise<boolean>`. Without the event evidence the post-compaction assertion
+would be vacuous: if no compaction ran, "post" is not post.
+
+⚠️ Note for whoever writes the next one: assert against the *reassembled* assistant reply, not the
+raw event stream. The model emits the codeword one token at a time (`"Z"`, `"AN"`, ...), so it never
+appears contiguously in the event JSON — an assertion that greps the stream is always false and
+reports a healthy artifact as broken. Run a trivial positive control (ask for `PONG`) first to
+separate "the artifact is broken" from "my assertion is broken".
 
 ---
 
