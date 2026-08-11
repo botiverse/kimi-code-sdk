@@ -13,7 +13,14 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 
 | upstream CLI tag (mirror) | npm `@botiverse/kimi-code-sdk@` |
 | --- | --- |
-| `@moonshot-ai/kimi-code@0.20.1` | `0.20.1` (**current `latest`**; 2026-06-27; pure mirror) **and** `0.20.1-botiverse.0` (2026-06-27; surface extension — `LocalKaos` + `Kaos`) **and** `0.20.1-botiverse.1` (**new `botiverse` tag**; 2026-07-07; surface extension `LocalKaos`+`Kaos` **+ `roleAdditional`** main-agent system-prompt threading — compaction-safe standing prompt; patch-branch `kai/0.20.1-botiverse-roleadditional`) |
+| `@moonshot-ai/kimi-code@0.34.0` | `0.34.0-botiverse.0` (**current `botiverse` tag**; 2026-08-11; surface extension `LocalKaos`+`Kaos` **+ `roleAdditional`**; patch-branch `kai/trial-0.34.0-roleadditional`; node-sdk source 0.15.3) |
+| _(rows below are BACKFILLED FROM NPM, dates only)_ | ⚠️ **this table went unmaintained between 0.20.1 and 0.34.0** — the following were published but never recorded here. Interface deltas for them are NOT written up; do not read absence below as "no change". |
+| `@moonshot-ai/kimi-code@0.33.0` | `0.33.0-botiverse.0` (2026-08-07) |
+| `@moonshot-ai/kimi-code@0.28.1` | `0.28.1-botiverse.0` (2026-07-21) |
+| `@moonshot-ai/kimi-code@0.28.0` | `0.28.0-botiverse.0` (2026-07-20) |
+| `@moonshot-ai/kimi-code@0.26.0` | `0.26.0` (**current `latest`**; 2026-07-16; pure mirror) **and** `0.26.0-botiverse.1` / `0.26.0-botiverse.2` (2026-07-16) |
+| `@moonshot-ai/kimi-code@0.23.5` | `0.23.5-botiverse.1` (2026-07-12) |
+| `@moonshot-ai/kimi-code@0.20.1` | `0.20.1` (2026-06-27; 2026-06-27; pure mirror) **and** `0.20.1-botiverse.0` (2026-06-27; surface extension — `LocalKaos` + `Kaos`) **and** `0.20.1-botiverse.1` (**new `botiverse` tag**; 2026-07-07; surface extension `LocalKaos`+`Kaos` **+ `roleAdditional`** main-agent system-prompt threading — compaction-safe standing prompt; patch-branch `kai/0.20.1-botiverse-roleadditional`) |
 | `@moonshot-ai/kimi-code@0.20.0` | `0.20.0` (2026-06-26; pure mirror) **and** `0.20.0-botiverse.0` (2026-06-26; surface extension) |
 | `@moonshot-ai/kimi-code@0.19.2` | `0.19.2` (2026-06-24; pure mirror) **and** `0.19.2-botiverse.0` (2026-06-24; surface extension — `LocalKaos` + `Kaos`) |
 | `@moonshot-ai/kimi-code@0.19.1` | _(mirrored, not separately published — superseded by 0.19.2)_ |
@@ -34,6 +41,42 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 - Upstream doesn't release → **we don't publish a pure repackage**. We may still publish a `-botiverse.<n>` pre-release against the most recent upstream tag if a mirror-side surface extension is needed.
 
 Rationale: 1:1 alignment with the upstream tag is preserved as the default install target so consumers reading the upstream Kimi Code release notes get exactly the upstream-shape mirror. Mirror-side surface additions are deliberate Botiverse-side changes that should not pretend to be upstream — the pre-release suffix surfaces that distinction. Earlier `0.9.3` and `0.9.4` (which followed the internal node-sdk version) are deprecated on npm in favor of `0.15.0`. The `repackage-sdk.mjs` script's `npm-version-override` arg is the mechanism for the suffix: pass `0.18.0-botiverse.0` when cutting an extended release.
+
+---
+
+## @botiverse/kimi-code-sdk@0.34.0-botiverse.0  (upstream `@moonshot-ai/kimi-code@0.34.0`)
+
+Published 2026-08-11 to dist-tag `botiverse`. `latest` deliberately unchanged (`0.26.0`).
+shasum `a247b30a008af43cd77ea0e4394efb91707d0ffb`.
+
+**Upstream node-sdk interface delta (0.15.2 -> 0.15.3):**
+- `SessionInfo.lastTurnReason?: 'completed' | 'cancelled' | 'failed'` — terminal outcome of the
+  session's latest main turn, now persisted across server restarts, so a client can mark a
+  previously-failed session *before* opening it (upstream PR #2666).
+- `export type { AgentCommandInfo }` re-exported from `@moonshot-ai/agent-core-v2` — contributed
+  commands are an agent-core-v2 seam; v1 sessions report an empty command set.
+- Subagent lifecycle events and background task info now carry the subagent's bound model and
+  thinking effort (upstream PR #2679).
+
+**Mirror-side:** unchanged patch stack — `LocalKaos` + `Kaos` surface extension, plus the
+`roleAdditional` standing-prompt threading, resume re-render fix, and protocol-declaration
+bundling, rebased onto 0.34.0. Only conflict when rebasing was the node-sdk `version` line.
+
+**Verification:** this is the first release gated by `verify-mirror-surface.mjs` *in CI* — the
+script existed since 0.18.0 but was invoked nowhere, so the assertions documented below were
+never executed. It is now wired into `publish-sdk.yml`, and the job installs the repackaged
+dist's peer deps first so its runtime import checks actually run instead of reporting `skip`.
+
+Also added `verify-roleadditional.mjs`, asserting a `-botiverse.*` build really carries the
+patch stack. Note it does **not** grep for the string `roleAdditional`: a build from plain
+upstream 0.34.0 (no patch at all) still contains that string — 1 occurrence in `index.d.mts`,
+9 in `index.mjs` — from the bundled dependency closure, and passes `verify-mirror-surface`
+9/9. A presence check would therefore have gone green in exactly the case it exists to catch.
+Both gates were proven to fail against a known-unpatched artifact (exit 1) before being
+trusted on a good one (exit 0).
+
+⛔ **Not run for this release: the e2e (codeword + `session.compact()` survival).** It needs a
+DeepSeek key that was not available to the publisher. Recorded here rather than left silent.
 
 ---
 
