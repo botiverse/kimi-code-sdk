@@ -32,12 +32,19 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      - name: Require SYNC_PAT
+        run: |
+          if [ -z "${{ secrets.SYNC_PAT }}" ]; then
+            echo "::error::SYNC_PAT secret is not set. This workflow cannot push tags containing upstream workflow files without a PAT that has repo+workflow scope. Set SYNC_PAT (see README Sync SOP) — do not fall back to github.token."
+            exit 1
+          fi
+
       - name: Checkout this repo (full history + tags)
         uses: actions/checkout@v5
         with:
           ref: upstream-main
           fetch-depth: 0
-          token: ${{ secrets.SYNC_PAT || github.token }}
+          token: ${{ secrets.SYNC_PAT }}
 
       - name: Configure git identity
         run: |
