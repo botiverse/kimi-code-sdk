@@ -42,19 +42,62 @@ ACP (Agent Client Protocol) doesn't expose a **steering** capability — i.e. yo
 **Recommended: `npm install`.** This gives you the dist-only repackage with just the few light runtime dependencies — no monorepo, no upstream toolchain, the typical consumer path:
 
 ```sh
-npm install @botiverse/kimi-code-sdk@0.9.3
+# Find the current published version first — do not copy a version out of this file.
+npm view @botiverse/kimi-code-sdk versions --json   # all published
+npm view @botiverse/kimi-code-sdk version           # latest on the default dist-tag
+
+npm install @botiverse/kimi-code-sdk@<version-you-just-read>
 ```
 
 Use the mirror tag only when you actually need the full upstream monorepo source (vendoring, local patching, or studying):
 
 ```sh
-# Less common — full monorepo source, much heavier
-github:botiverse/kimi-code-sdk#@moonshot-ai/kimi-code@0.14.3
+# Less common — full monorepo source, much heavier.
+# List the mirror tags, then pin one:
+gh release list --repo botiverse/kimi-code-sdk
+github:botiverse/kimi-code-sdk#@moonshot-ai/kimi-code@<tag-you-just-read>
 ```
+
+> **Why no version number is written here.** Any version pasted into this README starts
+> rotting the day it is written, and a stale example is indistinguishable from a current
+> one — it does not error, it just quietly sends people to an old release. This file
+> therefore documents *how to look the number up*, not what the number is. Anything below
+> that genuinely is a fixed value carries an `as-of` date.
 
 Both are immutable. The mirror tag stays frozen at the commit it pointed to when we first mirrored it, even if upstream force-pushes or deletes the upstream tag. The npm version is immutable per npm's own semantics.
 
 `RELEASES.md` records the upstream-tag ↔ npm-version mapping plus interface notes per release.
+
+### Mirror lag is normal, not a fault
+
+**Syncing and publishing are two different things, and only the second one is installable.**
+The daily CI (§5) mirrors upstream tags and smoke-builds them; it does **not** publish npm.
+So at any moment the newest upstream release, the newest mirror tag, and the newest published
+npm version can all be different. That is the expected steady state, not an outage.
+
+Check all three yourself rather than assuming they match:
+
+```sh
+gh release list --repo MoonshotAI/kimi-code       # 1. what upstream has released
+gh release list --repo botiverse/kimi-code-sdk    # 2. what this mirror has PUBLISHED
+npm view @botiverse/kimi-code-sdk version         # 3. what npm will actually install
+```
+
+If 1 is ahead of 2, the mirror has not published that release yet. Consumers are unaffected:
+your existing pin keeps working, because every published version is immutable. Nothing needs
+to be done on the consumer side except stay pinned.
+
+**Two rules that are easy to get wrong here, both learned the hard way:**
+
+- **A green sync does not mean a release is available.** Only reading list 2 above tells you
+  what is published. A green `sync-upstream` run means the tag was mirrored and smoke-built,
+  which is a prerequisite for publishing, not evidence of it.
+- **An upstream tag is not a pinnable artifact.** Upstream tags exist on the mirror as
+  immutable source tags; that is not the same as an installable npm version. Only a published
+  version can be pinned by an ordinary consumer.
+- **Never compare tag *counts* to decide whether the mirror is current.** Counts can match
+  while the contents differ, and can differ while nothing is wrong. Compare the actual
+  newest names from lists 1 and 2.
 
 ## 3. Version strategy
 
@@ -88,6 +131,33 @@ Add repo secret **`SYNC_PAT`** = a PAT with `repo` + `workflow` scope. The defau
 ### Known fragilities
 - Upstream is pre-1.0 (`0.x`) and **will** ship breaking API changes — absorbed by smoke-at-sync + consumer pinning.
 - If upstream changes its monorepo layout, the smoke build's `--filter`/paths must follow (this runbook, step 2).
+
+### Daily check (the maintainer routine)
+
+A green sync history proves the *pipeline* works. It does not prove the mirror is current
+from a consumer's point of view, because publishing (§6) is a separate, human-gated step.
+Those two facts drift apart silently: nothing fails, no issue is opened, and the repo simply
+starts describing a release nobody can install. The routine below exists to make that drift
+visible, and is run daily:
+
+```sh
+gh release list --repo MoonshotAI/kimi-code                          # 1. upstream releases
+gh run list --repo botiverse/kimi-code-sdk --workflow sync-upstream  # 2. sync health
+gh release list --repo botiverse/kimi-code-sdk                       # 3. what is PUBLISHED here
+```
+
+Each answers a different question, and they are not interchangeable:
+
+| Reading | Question it answers | What it does **not** tell you |
+|---|---|---|
+| 1 | What has upstream released? | Whether any of it is mirrored or installable |
+| 2 | Is the sync pipeline healthy? | Whether anything was published — a fully green history is compatible with nothing being published for months |
+| 3 | What can a consumer actually install? | Whether it is the newest upstream release |
+
+**Only reading 3 enables a pin bump.** Comparing 1 against 3 is the only comparison that
+answers "can a consumer install the newest upstream release?". If 1 is ahead of 3, that is a
+publish-side gap, not a sync failure, and §6 is the path that closes it — not a re-run of the
+sync workflow.
 
 ## 6. Publishing `@botiverse/kimi-code-sdk` to npm
 
