@@ -81,7 +81,12 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: 24    # kimi-code's package.json sets engines.node ">=24.15.0"
+          # DIAGNOSTIC ONLY (Kai, 2026-08-21) — NOT an approved permanent pin.
+          # `24` is a major LINE: 8/11 resolved 24.18.0, 2026-08-21 resolved 24.19.0,
+          # so the same tag can legally build to different bytes. Pinned here solely to
+          # test whether that drift causes the roleAdditional patch stack to vanish.
+          # Permanent toolchain pinning is the workflow owner's decision, not this branch's.
+          node-version: 24.18.0    # kimi-code's package.json sets engines.node ">=24.15.0"
           registry-url: 'https://registry.npmjs.org'
           # v5 enabled package-manager auto-cache by default; it tries to resolve pnpm
           # before we corepack-enable it later in the job. Disable so corepack stays the
