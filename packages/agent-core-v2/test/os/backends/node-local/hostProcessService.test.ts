@@ -11,6 +11,7 @@ import {
   IHostProcessService,
 } from '#/os/interface/hostProcess';
 import { HostProcessService } from '#/os/backends/node-local/hostProcessService';
+import { IBootstrapService } from '#/app/bootstrap/bootstrap';
 
 async function collect(stream: Readable): Promise<string> {
   const chunks: Buffer[] = [];
@@ -54,6 +55,26 @@ describe('HostProcessService', () => {
     const out = await collect(proc.stdout);
     expect(out).toBe('bar');
     expect(await proc.wait()).toBe(0);
+  });
+
+  it('uses the host base environment instead of the parent process environment', async () => {
+    process.env['KIMI_HOST_PROCESS_TEST_PARENT_ONLY'] = 'leaked';
+    try {
+      ix.stub(IBootstrapService, {
+        args: { requestHeaders: {}, baseEnv: { PATH: process.env['PATH'] ?? '', BASE_ONLY: 'base' } },
+      } as unknown as IBootstrapService);
+      const svc = ix.get(IHostProcessService);
+      const script =
+        'process.stdout.write(JSON.stringify([process.env.BASE_ONLY ?? null, process.env.KIMI_HOST_PROCESS_TEST_PARENT_ONLY ?? null, process.env.FOO ?? null]))';
+      const bare = await svc.spawn('node', ['-e', script]);
+      expect(JSON.parse(await collect(bare.stdout))).toEqual(['base', null, null]);
+      expect(await bare.wait()).toBe(0);
+      const withOverride = await svc.spawn('node', ['-e', script], { env: { FOO: 'bar' } });
+      expect(JSON.parse(await collect(withOverride.stdout))).toEqual(['base', null, 'bar']);
+      expect(await withOverride.wait()).toBe(0);
+    } finally {
+      delete process.env['KIMI_HOST_PROCESS_TEST_PARENT_ONLY'];
+    }
   });
 
   it('throws a coded error when the command does not exist', async () => {

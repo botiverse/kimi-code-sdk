@@ -2,6 +2,7 @@ import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
 import type { Readable, Writable } from 'node:stream';
 
 import { BufferedReadable } from '#/_base/execEnv/bufferedReadable';
+import { IBootstrapService } from '#/app/bootstrap/bootstrap';
 import { LifecycleScope } from '#/app/scopes';
 import { ScopeActivation, registerScopedService } from '#/_base/di/scope';
 
@@ -16,11 +17,14 @@ import {
 const isWindows: boolean = process.platform === 'win32';
 const TASKKILL_TIMEOUT_MS = 5_000;
 
-function buildSpawnOptions(options: HostProcessOptions): SpawnOptions {
+function buildSpawnOptions(
+  options: HostProcessOptions,
+  baseEnv: Readonly<Record<string, string>> | undefined,
+): SpawnOptions {
   const detached = options.detached ?? !isWindows;
   const spawnOptions: SpawnOptions = {
     cwd: options.cwd,
-    env: buildEnv(options.env),
+    env: buildEnv(baseEnv, options.env),
     stdio: options.mergeStderr ? ['pipe', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'],
     detached,
     windowsHide: options.windowsHide ?? true,
@@ -33,11 +37,14 @@ function buildSpawnOptions(options: HostProcessOptions): SpawnOptions {
   return spawnOptions;
 }
 
-function buildEnv(overrides: Record<string, string> | undefined): Record<string, string> | undefined {
-  if (overrides === undefined) {
+function buildEnv(
+  baseEnv: Readonly<Record<string, string>> | undefined,
+  overrides: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (baseEnv === undefined && overrides === undefined) {
     return undefined;
   }
-  return { ...(process.env as Record<string, string>), ...overrides };
+  return { ...(baseEnv ?? (process.env as Record<string, string>)), ...overrides };
 }
 
 function waitForSpawn(child: ChildProcess): Promise<void> {
@@ -181,12 +188,14 @@ class HostProcess implements IHostProcess {
 export class HostProcessService implements IHostProcessService {
   declare readonly _serviceBrand: undefined;
 
+  constructor(@IBootstrapService private readonly bootstrap?: IBootstrapService) {}
+
   async spawn(
     command: string,
     args: readonly string[] = [],
     options: HostProcessOptions = {},
   ): Promise<IHostProcess> {
-    const spawnOptions = buildSpawnOptions(options);
+    const spawnOptions = buildSpawnOptions(options, this.bootstrap?.args.baseEnv);
     const child = spawn(command, args as string[], spawnOptions);
     try {
       await waitForSpawn(child);
