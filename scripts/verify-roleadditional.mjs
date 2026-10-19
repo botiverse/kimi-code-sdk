@@ -51,6 +51,21 @@ const check = (ok, label) => {
   if (!ok) failures += 1;
 };
 
+// kimi-code 2.x (agent-core-v2): the patch is a harness option plus a resume
+// refresh; assert its own symbols, which upstream does not emit.
+if (!/var LocalKaos = class LocalKaos\b/.test(js)) {
+  check(/Botiverse mirror: host-supplied text rendered into the main agent/.test(dts), 'd.mts documents KimiHarnessOptions.roleAdditional');
+  check(/refreshMainAgentRoleAdditional/.test(js), 'index.mjs carries the resume refresh');
+  check(/roleAdditional: options\.roleAdditional/.test(js), 'index.mjs threads the harness option into the engine host args');
+  check(/context\.roleAdditional \?\? ""/.test(js), 'index.mjs renders roleAdditional into the main agent profile');
+  if (failures) {
+    console.log(`verify-roleadditional: FAIL (${failures} failures)`);
+    process.exit(1);
+  }
+  console.log(`verify-roleadditional: PASS (${pkg.name}@${pkg.version} carries the 2.x roleAdditional patch stack)`);
+  process.exit(0);
+}
+
 // Patch-specific, upstream does not emit these:
 check(/private roleAdditional\??;/.test(dts), 'd.mts declares the private roleAdditional plumbing field');
 check(

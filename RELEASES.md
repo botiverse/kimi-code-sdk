@@ -13,7 +13,8 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 
 | upstream CLI tag (mirror) | npm `@botiverse/kimi-code-sdk@` |
 | --- | --- |
-| `@moonshot-ai/kimi-code@0.34.0` | `0.34.0-botiverse.0` (**current `botiverse` tag**; 2026-08-11; surface extension `LocalKaos`+`Kaos` **+ `roleAdditional`**; patch-branch `kai/trial-0.34.0-roleadditional`; node-sdk source 0.15.3) |
+| `@moonshot-ai/kimi-code@2.2.0` | `2.2.0-botiverse.0` (to publish; patch-branch `patch-2.2.0-botiverse`; node-sdk source 0.21.0; surface: `KimiHarnessOptions.roleAdditional` + `KimiHarnessOptions.baseEnv`, **no `LocalKaos`** — kaos is gone in 2.x) |
+| `@moonshot-ai/kimi-code@0.34.0` | `0.34.0-botiverse.0` (current `botiverse` tag until 2.2.0-botiverse.0 ships; 2026-08-11; surface extension `LocalKaos`+`Kaos` **+ `roleAdditional`**; patch-branch `kai/trial-0.34.0-roleadditional`; node-sdk source 0.15.3) |
 | _(rows below are BACKFILLED FROM NPM, dates only)_ | ⚠️ **this table went unmaintained between 0.20.1 and 0.34.0** — the following were published but never recorded here. Interface deltas for them are NOT written up; do not read absence below as "no change". |
 | `@moonshot-ai/kimi-code@0.33.0` | `0.33.0-botiverse.0` (2026-08-07) |
 | `@moonshot-ai/kimi-code@0.28.1` | `0.28.1-botiverse.0` (2026-07-21) |
@@ -43,6 +44,22 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 Rationale: 1:1 alignment with the upstream tag is preserved as the default install target so consumers reading the upstream Kimi Code release notes get exactly the upstream-shape mirror. Mirror-side surface additions are deliberate Botiverse-side changes that should not pretend to be upstream — the pre-release suffix surfaces that distinction. Earlier `0.9.3` and `0.9.4` (which followed the internal node-sdk version) are deprecated on npm in favor of `0.15.0`. The `repackage-sdk.mjs` script's `npm-version-override` arg is the mechanism for the suffix: pass `0.18.0-botiverse.0` when cutting an extended release.
 
 ---
+
+## @botiverse/kimi-code-sdk@2.2.0-botiverse.0  (upstream `@moonshot-ai/kimi-code@2.2.0`)
+
+To publish to dist-tag `botiverse` from `patch-2.2.0-botiverse`.
+
+**This is a breaking jump for consumers (0.34 -> 2.2, node-sdk 0.15.3 -> 0.21.0)**:
+- The v1 engine is gone: `createKimiHarness` is now the agent-core-v2 harness (old `createKimiHarnessV2`); `SDKRpcClient` (v1) is no longer exported.
+- `kaos` is gone: no `LocalKaos` / `Kaos`. `createSession({ kaos, persistenceKaos })` is silently stripped.
+- `createSession` / `resumeSession` silently ignore `mcpServers` (attach with `session.addMcpServer(...)` after create/resume) and the old session-level `roleAdditional`.
+- A prompt submitted while a turn runs is queued by the engine instead of rejected with `turn.agent_busy`; `prompt.*` events are no longer delivered; `task.*` events are now `background.task.*`; new events `event.config.warning`, `event.plugin.changed`, `event.capability.changed`, `subagent.cancelled`. Events from subagents arrive with their `agentId` (the main agent is `main`).
+
+**Botiverse patch stack (on `patch-2.2.0-botiverse`):** upstream cut 2.2.0 on its release line, which no branch here carries, so the branch starts with an import commit (`8725c21c`) whose tree is byte-identical to the tag (`git diff @moonshot-ai/kimi-code@2.2.0 8725c21c` is empty), parented on `upstream-main`; then 2 patch commits:
+- `KimiHarnessOptions.baseEnv`: base environment of every process the engine's host process service spawns (tool execution), in place of `process.env`; per-call overrides still apply. Replaces `LocalKaos.create().withEnv(...)`.
+- `KimiHarnessOptions.roleAdditional`: rendered into the main agent's `${role_additional}` (upstream renders it empty for the main agent); the system prompt is sent per request outside compressible history, so it survives compaction. On resume the main agent's prompt is re-rendered with the current value (`IAgentProfileService.refreshSystemPrompt`, no update recorded when unchanged). Subagent profiles keep their own role text (the 0.x patch overrode them).
+
+**Gates:** `repackage-sdk.mjs` skips the LocalKaos rewrite for 2.x and fails closed when a `-botiverse` build has neither LocalKaos nor `baseEnv`; `verify-mirror-surface.mjs` / `verify-roleadditional.mjs` check the 2.x symbols. Negative control: plain upstream 2.2.0 fails all three (repackage refuses; 2/2 and 4/4 checks fail).
 
 ## @botiverse/kimi-code-sdk@0.34.0-botiverse.0  (upstream `@moonshot-ai/kimi-code@0.34.0`)
 

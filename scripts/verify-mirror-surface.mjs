@@ -49,6 +49,38 @@ function expect(label, ok, detail) {
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
 console.log(`verify: ${pkg.name}@${pkg.version}`);
 
+// kimi-code 2.x has no kaos: the 2.x patch stack exposes the env and role
+// surface through KimiHarnessOptions instead of a LocalKaos re-export.
+const mjsSource = readFileSync(mjsPath, 'utf8');
+if (/-botiverse\./.test(pkg.version) && !/var LocalKaos = class LocalKaos\b/.test(mjsSource)) {
+  const dmtsSource = readFileSync(dmtsPath, 'utf8');
+  expect(
+    'dist/index.d.mts declares KimiHarnessOptions.baseEnv (2.x patch stack)',
+    /readonly baseEnv\?: Readonly<Record<string, string>>;/.test(dmtsSource),
+  );
+  expect(
+    'dist/index.d.mts declares KimiHarnessOptions.roleAdditional (2.x patch stack)',
+    /Botiverse mirror: host-supplied text rendered into the main agent/.test(dmtsSource),
+  );
+  if (existsSync(join(outDir, 'node_modules'))) {
+    let mod;
+    try {
+      mod = await import(pathToFileURL(mjsPath).href);
+    } catch (err) {
+      expect('dist is importable (peer deps resolved)', false, err instanceof Error ? err.message : String(err));
+    }
+    if (mod) expect('`createKimiHarness` resolves to a function', typeof mod.createKimiHarness === 'function');
+  } else {
+    console.log('  skip runtime import checks (no node_modules in out-dir; install peer deps to enable)');
+  }
+  if (failures.length === 0) {
+    console.log(`verify: PASS (${pkg.name}@${pkg.version} 2.x surface contract holds)`);
+    process.exit(0);
+  }
+  console.error(`verify: FAIL (${failures.length} failure${failures.length === 1 ? '' : 's'})`);
+  process.exit(1);
+}
+
 // 1. Source-level inspection — the repackage script should have edited
 //    dist/index.mjs's trailing export block to include LocalKaos.
 const mjs = readFileSync(mjsPath, 'utf8');

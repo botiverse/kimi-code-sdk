@@ -79,7 +79,11 @@ if (existsSync(outDir)) rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 cpSync(join(srcDir, 'dist'), join(outDir, 'dist'), { recursive: true });
 if (isExtendedSurface) {
-  extendDistKaosSurface(join(outDir, 'dist'));
+  if (bundlesLocalKaos(join(outDir, 'dist'))) {
+    extendDistKaosSurface(join(outDir, 'dist'));
+  } else {
+    assertHarnessEnvSurface(join(outDir, 'dist'));
+  }
 } else {
   console.log(`repackage: pure mirror (${version}) — no mirror-side surface extension`);
 }
@@ -102,7 +106,26 @@ writeFileSync(join(outDir, 'README.md'),
   `Read-only mirror + release notes: https://github.com/botiverse/kimi-code-sdk\n\n> Not affiliated with Moonshot AI. MIT (see LICENSE).\n`);
 console.log(`repackaged ${upstreamName}@${version} -> @botiverse/kimi-code-sdk@${version} at ${outDir}`);
 
-// ── Mirror-side Kaos surface extension ──────────────────────────────────────
+// ── 2.x line: no kaos, the patch stack carries the env surface itself ───────
+//
+// kimi-code 2.x removed the kaos package (and LocalKaos with it); tool processes
+// are spawned by agent-core-v2's host process service. The 2.x Botiverse patch
+// stack adds `KimiHarnessOptions.baseEnv` (the base environment for those
+// processes) and `roleAdditional`, so the published surface needs no dist
+// rewrite. Fail closed when a -botiverse build carries neither surface.
+function bundlesLocalKaos(distDir) {
+  return /var LocalKaos = class LocalKaos\b/.test(readFileSync(join(distDir, 'index.mjs'), 'utf8'));
+}
+
+function assertHarnessEnvSurface(distDir) {
+  const dmts = readFileSync(join(distDir, 'index.d.mts'), 'utf8');
+  if (!/readonly baseEnv\?: Readonly<Record<string, string>>;/.test(dmts)) {
+    throw new Error('repackage: -botiverse build has neither LocalKaos (0.x) nor KimiHarnessOptions.baseEnv (2.x patch stack); refusing to publish');
+  }
+  console.log('repackage: 2.x patch stack (KimiHarnessOptions.baseEnv / roleAdditional) — no dist surface rewrite needed');
+}
+
+// ── Mirror-side Kaos surface extension (0.x line) ───────────────────────────
 //
 // Upstream's `node-sdk/dist/index.mjs` bundles `LocalKaos` (along with the rest
 // of the kaos package) but does not include it in its trailing `export { ... }`
