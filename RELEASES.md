@@ -55,7 +55,7 @@ To publish to dist-tag `botiverse` from `patch-2.2.0-botiverse`.
 - `createSession` / `resumeSession` silently ignore `mcpServers` (attach with `session.addMcpServer(...)` after create/resume) and the old session-level `roleAdditional`.
 - A prompt submitted while a turn runs is queued by the engine instead of rejected with `turn.agent_busy`; `prompt.*` events are no longer delivered; `task.*` events are now `background.task.*`; new events `event.config.warning`, `event.plugin.changed`, `event.capability.changed`, `subagent.cancelled`. Events from subagents arrive with their `agentId` (the main agent is `main`).
 
-**Botiverse patch stack (2 commits on the tag):**
+**Botiverse patch stack (on `patch-2.2.0-botiverse`):** upstream cut 2.2.0 on its release line, which no branch here carries, so the branch starts with an import commit (`8725c21c`) whose tree is byte-identical to the tag (`git diff @moonshot-ai/kimi-code@2.2.0 8725c21c` is empty), parented on `upstream-main`; then 2 patch commits:
 - `KimiHarnessOptions.baseEnv`: base environment of every process the engine's host process service spawns (tool execution), in place of `process.env`; per-call overrides still apply. Replaces `LocalKaos.create().withEnv(...)`.
 - `KimiHarnessOptions.roleAdditional`: rendered into the main agent's `${role_additional}` (upstream renders it empty for the main agent); the system prompt is sent per request outside compressible history, so it survives compaction. On resume the main agent's prompt is re-rendered with the current value (`IAgentProfileService.refreshSystemPrompt`, no update recorded when unchanged). Subagent profiles keep their own role text (the 0.x patch overrode them).
 
