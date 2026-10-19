@@ -64,6 +64,7 @@ import {
 
 import { McpOAuthService as McpOAuthServiceV2 } from '@moonshot-ai/agent-core-v2/mcpCore/oauth/service';
 import { TowerStore } from '@moonshot-ai/agent-core-v2/features/tower/protocol/store';
+import { IHostProcessService } from '@moonshot-ai/agent-core-v2/os/interface/hostProcess';
 
 import { TEST_IDENTITY } from './test-identity';
 import {
@@ -367,6 +368,29 @@ describe('SDKRpcClientV2 (agent-core-v2 wiring)', () => {
       expect(headers['X-Msh-Version']).toBe(TEST_IDENTITY.version);
       expect(headers['X-Msh-Device-Id']).toBeTruthy();
     } finally {
+      await client.close();
+    }
+  });
+
+  it('spawns engine processes from the host baseEnv instead of this process env', async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), 'kimi-sdk-v2-'));
+    tempDirs.push(homeDir);
+    const client = new SDKRpcClientV2({
+      homeDir,
+      identity: TEST_IDENTITY,
+      baseEnv: { PATH: process.env['PATH'] ?? '', HOST_BASE_ONLY: 'base' },
+    });
+    vi.stubEnv('KIMI_SDK_TEST_PARENT_ONLY', 'leaked');
+    try {
+      const child = await client.engineAccessor
+        .get(IHostProcessService)
+        .spawn('node', ['-e', 'process.stdout.write(JSON.stringify([process.env.HOST_BASE_ONLY ?? null, process.env.KIMI_SDK_TEST_PARENT_ONLY ?? null]))']);
+      const chunks: Buffer[] = [];
+      for await (const chunk of child.stdout) chunks.push(chunk as Buffer);
+      expect(JSON.parse(Buffer.concat(chunks).toString('utf8'))).toEqual(['base', null]);
+      expect(await child.wait()).toBe(0);
+    } finally {
+      vi.unstubAllEnvs();
       await client.close();
     }
   });
@@ -783,6 +807,51 @@ key = "${titleOAuthRef.key}"
       expect(plain).not.toBe(withReplay);
     } finally {
       await harness.close();
+    }
+  });
+
+  it('renders the host roleAdditional into the main agent prompt and refreshes it on resume', async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), 'kimi-role-home-'));
+    const workDir = await mkdtemp(join(tmpdir(), 'kimi-role-work-'));
+    tempDirs.push(homeDir, workDir);
+    const mainPrompt = (client: SDKRpcClientV2): string => {
+      const session = getLiveSessionById(client.engineAccessor, 'ses_role')!;
+      const main = session.accessor.get(IAgentLifecycleService).handleOf('main')!;
+      return main.accessor.get(IAgentProfileService).getSystemPrompt();
+    };
+    const first = new SDKRpcClientV2({ homeDir, identity: TEST_IDENTITY, roleAdditional: 'Standing role v1' });
+    try {
+      await first.setConfig({
+        providers: {
+          stub: { type: 'openai', baseUrl: 'https://model.example.test/v1', apiKey: 'YOUR_API_KEY' },
+        },
+        models: { stub: { provider: 'stub', model: 'stub', maxContextSize: 32000 } },
+        defaultModel: 'stub',
+      });
+      await first.createSession({ id: 'ses_role', workDir, model: 'stub' });
+      expect(mainPrompt(first)).toContain('Standing role v1');
+    } finally {
+      await first.close();
+    }
+
+    // A later host (a new launch with an updated standing prompt) resumes the
+    // session: the persisted bind still carries v1 until the refresh.
+    const second = new SDKRpcClientV2({ homeDir, identity: TEST_IDENTITY, roleAdditional: 'Standing role v2' });
+    try {
+      await second.resumeSession({ id: 'ses_role' });
+      expect(mainPrompt(second)).toContain('Standing role v2');
+      expect(mainPrompt(second)).not.toContain('Standing role v1');
+    } finally {
+      await second.close();
+    }
+
+    // A host that sets no roleAdditional leaves the persisted prompt alone.
+    const third = new SDKRpcClientV2({ homeDir, identity: TEST_IDENTITY });
+    try {
+      await third.resumeSession({ id: 'ses_role' });
+      expect(mainPrompt(third)).toContain('Standing role v2');
+    } finally {
+      await third.close();
     }
   });
 

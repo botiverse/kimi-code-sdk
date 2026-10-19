@@ -226,6 +226,21 @@ export interface KimiHarnessOptions {
    * offer the dependent tool.
    */
   readonly uiCapabilities?: readonly HostUiCapability[];
+  /**
+   * Botiverse mirror: host-supplied text rendered into the main agent's base
+   * system prompt (`${role_additional}`) for every session this harness
+   * hosts. The system prompt is sent on every request outside compressible
+   * history, so the text survives context compaction. A resumed session is
+   * re-rendered with the current value.
+   */
+  readonly roleAdditional?: string;
+  /**
+   * Botiverse mirror: the base environment for every process the engine
+   * spawns for tool execution, in place of this process's `process.env`.
+   * Per-call overrides (e.g. the shell tool's own variables) still apply on
+   * top.
+   */
+  readonly baseEnv?: Readonly<Record<string, string>>;
   readonly telemetry?: TelemetryClient | undefined;
   readonly onOAuthRefresh?: ((outcome: OAuthRefreshOutcome) => void) | undefined;
   readonly sessionStartedProperties?: TelemetryProperties;

@@ -357,6 +357,10 @@ export interface SDKRpcClientV2Options {
   readonly uiMode?: string;
   /** UI surfaces this host renders; forwarded as `BootstrapInput.args.uiCapabilities`. */
   readonly uiCapabilities?: readonly HostUiCapability[];
+  /** Botiverse mirror: see `KimiHarnessOptions.roleAdditional`. */
+  readonly roleAdditional?: string;
+  /** Botiverse mirror: see `KimiHarnessOptions.baseEnv`. */
+  readonly baseEnv?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -457,6 +461,8 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
           // user / project discovery for every session this client hosts.
           skillDirs: options.skillDirs,
           uiCapabilities: options.uiCapabilities,
+          roleAdditional: options.roleAdditional,
+          baseEnv: options.baseEnv,
         },
       },
       [...logSeed(resolveLoggingConfig({ homeDir: this.homeDir, env: process.env }))],
@@ -1519,6 +1525,7 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
       });
       if (handle === undefined) throw SDKRpcClientV2.sessionNotFound(input.id);
       this.wireSession(handle);
+      await this.refreshMainAgentRoleAdditional(handle);
       return this.resumedSessionSummary(handle, {
         includeSubagents: input.includeSubagents,
         replayTurnLimit: input.replayTurnLimit,
@@ -1762,6 +1769,20 @@ export class SDKRpcClientV2 extends SDKRpcClientBase {
       }
     }
     return agent;
+  }
+
+  /**
+   * Botiverse mirror: a resumed main agent keeps the system prompt rendered
+   * when it was bound (restored from its durable bind), so a host whose
+   * `roleAdditional` changed since then would keep sending the old text.
+   * Re-render the bound profile with the current host args; the profile
+   * service records it only when the text actually changed.
+   */
+  private async refreshMainAgentRoleAdditional(session: ISessionScopeHandle): Promise<void> {
+    if (this.app.accessor.get(IBootstrapService).args.roleAdditional === undefined) return;
+    const agent = session.accessor.get(IAgentLifecycleService).handleOf(MAIN_AGENT_ID);
+    if (agent === undefined) return;
+    await agent.accessor.get(IAgentProfileService).refreshSystemPrompt();
   }
 
   /** The target agent's live scope handle (see the section header). */
