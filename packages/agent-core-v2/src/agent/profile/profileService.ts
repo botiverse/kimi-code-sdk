@@ -466,6 +466,18 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
     this.publishToolPatternWarnings(profile);
   }
 
+  async refreshSystemPrompt(): Promise<void> {
+    const profileName = this.profileName;
+    if (profileName === undefined) return;
+    await this.catalog.ready;
+    const profile = this.catalog.get(profileName);
+    if (profile === undefined) return;
+    const context = await this.buildSystemPromptContext(profile);
+    const rendered = renderAgentProfilePrompt(profile, context);
+    if (rendered.text === this.systemPrompt) return;
+    this.update({ systemPrompt: rendered.text, environmentDisclosure: rendered.environment });
+  }
+
   private seedAgentsMdReminder(context: SystemPromptContext): void {
     this.agentsMdReminder.seedInjected(
       context.agentsMdPaths ?? [],
@@ -911,6 +923,7 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
       skillActive: this.isToolActiveForProfile(profile, 'Skill'),
       productName: (await this.identity.resolved()).displayName,
       replyStyleGuide: this.bootstrap.args.replyStyleGuide,
+      roleAdditional: this.bootstrap.args.roleAdditional,
       notifyUserActive:
         this.notify.enabled &&
         this.isToolActiveForProfile(profile, NOTIFY_USER_TOOL_NAME),

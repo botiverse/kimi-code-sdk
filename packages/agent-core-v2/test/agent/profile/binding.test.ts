@@ -36,6 +36,7 @@ import { IWireService } from '#/wire/wire';
 import type { ExecutableTool, ToolExecution, ToolResult, ToolSource } from '#/tool/toolContract';
 
 import { IAgentIdentity } from '#/app/agentIdentity/agentIdentity';
+import { IBootstrapService } from '#/app/bootstrap/bootstrap';
 
 import { deferredAgentIdentityStub } from '../../app/agentIdentity/stubs';
 import {
@@ -345,6 +346,33 @@ describe('AgentProfileService.bind', () => {
     expect(ctx.get(IAgentProfileService).data().agentsMdPaths).toEqual(
       bindingRecord?.['agentsMdPaths'],
     );
+  });
+
+  it('renders the host role text into the bound prompt and refreshes it only when it changed', async () => {
+    const persistence = new InMemoryWireRecordPersistence();
+    ctx = createTestAgent({ persistence }, hostEnvironmentServices(homeDir));
+    const args = ctx.get(IBootstrapService).args as { roleAdditional?: string };
+    args.roleAdditional = 'Standing role v1';
+    const svc = ctx.get(IAgentProfileService);
+    await svc.bind({ profile: DEFAULT_AGENT_PROFILE_NAME, model: MOCK_MODEL });
+    expect(svc.getSystemPrompt()).toContain('Standing role v1');
+    const promptUpdates = async () => {
+      await ctx.get(IWireService).flush();
+      return persistence.records.filter(
+        (record) => record.type === 'config.update' && 'systemPrompt' in record,
+      ).length;
+    };
+    const before = await promptUpdates();
+
+    await svc.refreshSystemPrompt();
+    expect(await promptUpdates()).toBe(before);
+
+    args.roleAdditional = 'Standing role v2';
+    await svc.refreshSystemPrompt();
+    expect(svc.getSystemPrompt()).toContain('Standing role v2');
+    expect(svc.getSystemPrompt()).not.toContain('Standing role v1');
+    expect(svc.data().modelAlias).toBe(MOCK_MODEL);
+    expect(await promptUpdates()).toBe(before + 1);
   });
 
   it('keeps the system prompt frozen after a default bind when AGENTS.md changes', async () => {

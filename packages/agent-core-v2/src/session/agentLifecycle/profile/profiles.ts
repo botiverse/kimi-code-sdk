@@ -93,7 +93,9 @@ registerAgentProfile({
   tools: AGENT_TOOLS,
   subagents: ['coder', 'explore', 'plan'],
   renderSystemPrompt: (context) =>
-    renderSystemPromptResult('', context, { skillActive: skillActiveFor(AGENT_TOOLS) }),
+    renderSystemPromptResult(context.roleAdditional ?? '', context, {
+      skillActive: skillActiveFor(AGENT_TOOLS),
+    }),
 });
 
 registerAgentProfile({

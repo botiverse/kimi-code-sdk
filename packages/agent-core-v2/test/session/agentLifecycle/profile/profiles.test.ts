@@ -21,4 +21,14 @@ describe('builtin agent profiles', () => {
     const agent = profile('agent');
     expect(agent.subagents).toEqual(['coder', 'explore', 'plan']);
   });
+
+  it('renders the host role text into the default profile only', () => {
+    const role = 'Standing role from the host';
+    const main = profile('agent').renderSystemPrompt?.({ roleAdditional: role });
+    expect(main?.text).toContain(role);
+    expect(profile('agent').renderSystemPrompt?.({})?.text).not.toContain(role);
+    for (const name of ['coder', 'explore']) {
+      expect(profile(name).renderSystemPrompt?.({ roleAdditional: role })?.text ?? '').not.toContain(role);
+    }
+  });
 });
