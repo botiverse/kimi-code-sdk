@@ -13,8 +13,9 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 
 | upstream CLI tag (mirror) | npm `@botiverse/kimi-code-sdk@` |
 | --- | --- |
-| `@moonshot-ai/kimi-code@2.2.0` | `2.2.0-botiverse.0` (to publish; patch-branch `patch-2.2.0-botiverse`; node-sdk source 0.21.0; surface: `KimiHarnessOptions.roleAdditional` + `KimiHarnessOptions.baseEnv`, **no `LocalKaos`** — kaos is gone in 2.x) |
-| `@moonshot-ai/kimi-code@0.34.0` | `0.34.0-botiverse.0` (current `botiverse` tag until 2.2.0-botiverse.0 ships; 2026-08-11; surface extension `LocalKaos`+`Kaos` **+ `roleAdditional`**; patch-branch `kai/trial-0.34.0-roleadditional`; node-sdk source 0.15.3) |
+| `@moonshot-ai/kimi-code@2.3.1` | `2.3.1-botiverse.0` (**current `botiverse` tag**; published 2026-10-24; patch-branch `patch-2.3.1-botiverse` = the 2.2.0 stack rebased, node-sdk source 0.21.1; surface: `KimiHarnessOptions.baseEnv` + `KimiHarnessOptions.roleAdditional`, **no `LocalKaos`**) |
+| `@moonshot-ai/kimi-code@2.2.0` | `2.2.0-botiverse.0` (**never published** — the push-tag trigger did not fire; superseded by 2.3.1-botiverse.0. Patch-branch `patch-2.2.0-botiverse`; node-sdk source 0.21.0) |
+| `@moonshot-ai/kimi-code@0.34.0` | `0.34.0-botiverse.0` (was the `botiverse` tag until 2.3.1-botiverse.0 shipped; 2026-08-11; surface extension `LocalKaos`+`Kaos` **+ `roleAdditional`**; patch-branch `kai/trial-0.34.0-roleadditional`; node-sdk source 0.15.3) |
 | _(rows below are BACKFILLED FROM NPM, dates only)_ | ⚠️ **this table went unmaintained between 0.20.1 and 0.34.0** — the following were published but never recorded here. Interface deltas for them are NOT written up; do not read absence below as "no change". |
 | `@moonshot-ai/kimi-code@0.33.0` | `0.33.0-botiverse.0` (2026-08-07) |
 | `@moonshot-ai/kimi-code@0.28.1` | `0.28.1-botiverse.0` (2026-07-21) |
@@ -44,6 +45,41 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 Rationale: 1:1 alignment with the upstream tag is preserved as the default install target so consumers reading the upstream Kimi Code release notes get exactly the upstream-shape mirror. Mirror-side surface additions are deliberate Botiverse-side changes that should not pretend to be upstream — the pre-release suffix surfaces that distinction. Earlier `0.9.3` and `0.9.4` (which followed the internal node-sdk version) are deprecated on npm in favor of `0.15.0`. The `repackage-sdk.mjs` script's `npm-version-override` arg is the mechanism for the suffix: pass `0.18.0-botiverse.0` when cutting an extended release.
 
 ---
+
+## @botiverse/kimi-code-sdk@2.3.1-botiverse.0  (upstream `@moonshot-ai/kimi-code@2.3.1`)
+
+Published 2026-10-24 to dist-tag `botiverse` (`latest` left at 0.26.0). Built from
+`patch-2.3.1-botiverse`, which is the 2.2.0 patch stack **rebased onto the 2.3.1 release tree**:
+both patch commits cherry-picked with no conflict (`baseEnv`, then `roleAdditional`), node-sdk source
+`0.21.1`.
+
+**What was verified on this build, with controls** (not asserted from the version number):
+- `KimiHarnessOptions.baseEnv` reaches tool child processes: with
+  `baseEnv: { ...process.env, KAI_PATCH_PROBE: 'botiverse-baseEnv-works' }` a shell command wrote
+  `botiverse-baseEnv-works` to a file read back by the host; without `baseEnv` the same command wrote
+  nothing (the variable was absent). The file read-back is deliberate — asking the model to report its own
+  output once produced a literal `$KAI_PATCH_PROBE` echo, which looked like a failure and was not one.
+- `KimiHarnessOptions.roleAdditional` reaches the main agent's system prompt: with a codeword in
+  `roleAdditional` the model answered the codeword; without it, it did not.
+- The published tarball carries the patch: `baseEnv?: Readonly<Record<string, string>>` present in
+  `dist/index.d.mts`, `roleAdditional` 5 hits there, `baseEnv` 11 hits in `dist/index.mjs`.
+  Registry metadata: integrity + 2 signatures + SLSA provenance attestation.
+- A clean `npm i @botiverse/kimi-code-sdk@2.3.1-botiverse.0` imports and exposes
+  `createKimiHarness` / `Session` as functions.
+
+**2.3.1 interface notes for consumers (measured, this build):** `createKimiHarness` requires an
+`identity` (`productName` / `version` / `platform`) and throws `Kimi host identity is required` without
+one; permission is `permission: 'yolo' | 'manual' | 'auto'`; the event surface is `thinking.delta`
+(reasoning) and `assistant.delta` (text) as separate streams, `tool.call.delta` / `tool.call.started` /
+`tool.progress` / `tool.result`, and `turn.ended` carries `durationMs` / `traceId` / `sessionId` /
+`reason`; `session.steer()` works mid-turn (verified: a steer at t+1.2 s changed the answer in-flight);
+`LocalKaos` / `Kaos` do not exist anywhere in the tree.
+
+**Publishing this one required a dispatch, not a tag push.** No `push`-event runs exist in this repo:
+pushing `publish-sdk/v2.3.1-botiverse.0` created the tag but started no workflow (the same reason
+`2.2.0-botiverse.0` never landed). The publish was therefore run as `workflow_dispatch` with
+`source_tag=patch-2.3.1-botiverse`, `npm_version=2.3.1-botiverse.0`, `dry_run=false`, after an identical
+dry run went green. **Treat `workflow_dispatch` as the working path until the trigger is fixed.**
 
 ## @botiverse/kimi-code-sdk@2.2.0-botiverse.0  (upstream `@moonshot-ai/kimi-code@2.2.0`)
 
