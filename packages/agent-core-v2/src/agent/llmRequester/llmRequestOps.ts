@@ -55,6 +55,7 @@ const llmRequestSchema = z.object({
   systemPrompt: z.string().optional(),
   toolsHash: z.string(),
   messageCount: z.number(),
+  messagesHash: z.string().optional(),
   turnStep: z.string().optional(),
   attempt: z.string().optional(),
   projection: z.enum(['strict', 'media-degraded', 'media-stripped', 'strict-media-degraded', 'strict-media-stripped']).optional(),
@@ -85,6 +86,7 @@ export interface LlmRequest {
   readonly systemPrompt?: string;
   readonly toolsHash: string;
   readonly messageCount: number;
+  readonly messagesHash?: string;
   readonly turnStep?: string;
   readonly attempt?: string;
   readonly projection?:

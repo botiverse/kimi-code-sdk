@@ -305,6 +305,7 @@ function normalizeObjectField(key: string, value: unknown, labels: SnapshotLabel
   if (key === 'cwd' && typeof value === 'string') return '<cwd>';
   if (key === 'localDate' && typeof value === 'string') return '<date>';
   if (key === 'timeZone' && typeof value === 'string') return '<time-zone>';
+  if (key === 'messagesHash' && typeof value === 'string') return '<messages-hash>';
   return normalizeValue(value, labels);
 }
 

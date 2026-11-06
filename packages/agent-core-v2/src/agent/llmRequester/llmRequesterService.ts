@@ -70,6 +70,7 @@ import {
   ToolCallIdNormalizer,
   type ToolCallIdResponseNormalizer,
 } from '#human/llm/toolCallIdNormalizer';
+import { hashLlmRequestMessages } from './llmRequestRebuild';
 import {
   LlmRequest,
   llmRequestTraceKey,
@@ -840,6 +841,7 @@ export class AgentLLMRequesterService implements IAgentLLMRequesterService {
           : input.systemPrompt,
       toolsHash,
       messageCount: input.messages.length,
+      messagesHash: messagesHashOf(input.messages),
       turnStep: stringField(fields, 'turnStep'),
       attempt: stringField(fields, 'attempt'),
       projection: projectionField(fields),
@@ -978,6 +980,14 @@ function projectionField(fields: AgentLLMRequestLogFields): LlmRequestProjection
       return value;
     default:
       return undefined;
+  }
+}
+
+function messagesHashOf(messages: readonly Message[]): string | undefined {
+  try {
+    return hashLlmRequestMessages(messages);
+  } catch {
+    return undefined;
   }
 }
 
