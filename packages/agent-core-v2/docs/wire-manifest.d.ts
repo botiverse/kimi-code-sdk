@@ -407,6 +407,7 @@ interface LlmRequestPayload {
   systemPrompt?: string;
   toolsHash: string;
   messageCount: number;
+  messagesHash?: string;
   turnStep?: string;
   attempt?: string;
   projection?: 'strict' | 'media-degraded' | 'media-stripped' | 'strict-media-degraded' | 'strict-media-stripped';
