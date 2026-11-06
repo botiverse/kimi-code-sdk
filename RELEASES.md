@@ -13,7 +13,8 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 
 | upstream CLI tag (mirror) | npm `@botiverse/kimi-code-sdk@` |
 | --- | --- |
-| `@moonshot-ai/kimi-code@2.2.0` | `2.2.0-botiverse.0` (to publish; patch-branch `patch-2.2.0-botiverse`; node-sdk source 0.21.0; surface: `KimiHarnessOptions.roleAdditional` + `KimiHarnessOptions.baseEnv`, **no `LocalKaos`** — kaos is gone in 2.x) |
+| `@moonshot-ai/kimi-code@2.3.1` | `2.3.1-botiverse.1` (current `botiverse` tag; 2026-11-06; patch-branch `patch-2.3.1-botiverse`; adds `rebuildLastLlmRequest` and `llm.request.messagesHash` on top of `.0`) **and** `2.3.1-botiverse.0` (2026-10-24; surface: `KimiHarnessOptions.roleAdditional` + `baseEnv`) |
+| `@moonshot-ai/kimi-code@2.2.0` | `2.2.0-botiverse.0` (never published, superseded by 2.3.1-botiverse.0; patch-branch `patch-2.2.0-botiverse`; node-sdk source 0.21.0; surface: `KimiHarnessOptions.roleAdditional` + `KimiHarnessOptions.baseEnv`, **no `LocalKaos`** — kaos is gone in 2.x) |
 | `@moonshot-ai/kimi-code@0.34.0` | `0.34.0-botiverse.0` (current `botiverse` tag until 2.2.0-botiverse.0 ships; 2026-08-11; surface extension `LocalKaos`+`Kaos` **+ `roleAdditional`**; patch-branch `kai/trial-0.34.0-roleadditional`; node-sdk source 0.15.3) |
 | _(rows below are BACKFILLED FROM NPM, dates only)_ | ⚠️ **this table went unmaintained between 0.20.1 and 0.34.0** — the following were published but never recorded here. Interface deltas for them are NOT written up; do not read absence below as "no change". |
 | `@moonshot-ai/kimi-code@0.33.0` | `0.33.0-botiverse.0` (2026-08-07) |
@@ -42,6 +43,18 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 - Upstream doesn't release → **we don't publish a pure repackage**. We may still publish a `-botiverse.<n>` pre-release against the most recent upstream tag if a mirror-side surface extension is needed.
 
 Rationale: 1:1 alignment with the upstream tag is preserved as the default install target so consumers reading the upstream Kimi Code release notes get exactly the upstream-shape mirror. Mirror-side surface additions are deliberate Botiverse-side changes that should not pretend to be upstream — the pre-release suffix surfaces that distinction. Earlier `0.9.3` and `0.9.4` (which followed the internal node-sdk version) are deprecated on npm in favor of `0.15.0`. The `repackage-sdk.mjs` script's `npm-version-override` arg is the mechanism for the suffix: pass `0.18.0-botiverse.0` when cutting an extended release.
+
+---
+
+## @botiverse/kimi-code-sdk@2.3.1-botiverse.1  (upstream `@moonshot-ai/kimi-code@2.3.1`)
+
+Published 2026-11-06 to dist-tag `botiverse` from `patch-2.3.1-botiverse` (tag `publish-sdk/v2.3.1-botiverse.1`, kimi-code-sdk#9).
+
+**Interface delta from `2.3.1-botiverse.0`:**
+- `rebuildLastLlmRequest(records)` and `hashLlmRequestMessages(messages)`, with types `LlmRequestRebuild` and `LlmRequestRebuildRefusal`. From one agent's `wire.jsonl` records, in file order, it rebuilds the last `kind: 'loop'` `llm.request`: system prompt, tools, messages and response. Pass every physical line up to the point of interest, metadata included: branch records refer to line numbers. Any failed check is a refusal with a reason, never a best guess.
+- `llm.request` records an optional `messagesHash`. Sessions that have it report `verified`; older ones report `count_matched`. Every model request now pays for the hash (73 ms for 50 MB); if it can't be computed it's left out, so it can't fail the request.
+
+**Known limits:** see kimi-code-sdk#9. No real Kimi session file had been tried at publish time. `test (2)` was red at merge, and the same `kimi-tui-message-flow.test.ts` tests fail on the base commit.
 
 ---
 
