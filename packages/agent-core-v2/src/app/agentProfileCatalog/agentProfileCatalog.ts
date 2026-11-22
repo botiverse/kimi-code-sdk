@@ -20,6 +20,7 @@ export interface AgentProfileContext {
   readonly skills?: string;
   readonly skillActive?: boolean;
   readonly pluginSections?: string;
+  readonly roleAdditional?: string;
   readonly productName?: string;
   readonly replyStyleGuide?: string;
   readonly notifyUserActive?: boolean;

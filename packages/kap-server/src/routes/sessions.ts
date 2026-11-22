@@ -16,6 +16,7 @@ import {
   ISessionContext,
   ISessionIndex,
   ISessionMetadata,
+  ISessionRoleAdditional,
   type SessionMeta,
   ISessionTitleService,
   IEventService,
@@ -167,6 +168,7 @@ const sessionActionRequestSchema = z.preprocess(
     count: z.number().int().positive().optional(),
     page_size: z.number().int().min(1).max(100).optional(),
     mcp_servers: ephemeralMcpServersSchema.optional(),
+    append_system_prompt: z.string().optional(),
     agent_config: sessionAgentConfigPartialSchema.optional(),
   }),
 );
@@ -276,6 +278,7 @@ export function registerSessionsRoutes(
           environmentCwd: body.environment_cwd,
           mainAgentBinding,
           mcpServers,
+          roleAdditional: body.append_system_prompt,
           ensureMainAgent: body.environment_id !== undefined && body.environment_id !== 'local',
           prepare: async (session) => {
             if (Object.keys(custom).length > 0) {
@@ -1018,16 +1021,21 @@ async function resumeSessionAction(
   const { core, req, reply, id, body } = ctx;
   const mcpServers =
     body.mcp_servers === undefined ? undefined : fromEphemeralMcpServersWire(body.mcp_servers);
+  const roleAdditional = body.append_system_prompt;
   const existing = getLiveSessionById(core.accessor, id);
   if (existing !== undefined && mcpServers !== undefined) {
     await assertSessionIdle(existing, id, 'resumed with new MCP servers');
     await closeSessionById(core.accessor, id);
+  } else if (existing !== undefined && roleAdditional !== undefined) {
+    await assertSessionIdle(existing, id, 'resumed with new append_system_prompt');
+    existing.accessor.get(ISessionRoleAdditional).value = roleAdditional;
+    await (await ensureMainAgent(existing)).accessor.get(IAgentLoopService).refreshSystemPrompt();
   }
-  const handle = await resumeSessionById(
-    core.accessor,
-    id,
-    mcpServers === undefined ? undefined : { mcpServers },
-  );
+  const resumeOptions =
+    mcpServers === undefined && roleAdditional === undefined
+      ? undefined
+      : { mcpServers, roleAdditional };
+  const handle = await resumeSessionById(core.accessor, id, resumeOptions);
   if (handle === undefined) {
     throw new Error2(ErrorCodes.SESSION_NOT_FOUND, `session ${id} does not exist`);
   }

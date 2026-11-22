@@ -223,6 +223,13 @@ export class AgentLoopProfileAdapter implements EffectiveProfileReader {
     if (snapshot !== undefined) await this.setProfile(snapshot);
   }
 
+  async refreshSystemPrompt(): Promise<void> {
+    const changed = await this.profile.resolveSystemPromptRefresh(this.state.profile);
+    if (changed !== undefined) {
+      this.update(changed);
+    }
+  }
+
   restore(snapshot: LoopJournalSnapshot): void {
     this.state = { profile: snapshot.profile, bound: snapshot.profileBound };
   }

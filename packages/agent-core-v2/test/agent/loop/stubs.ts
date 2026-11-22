@@ -152,6 +152,7 @@ export function stubLoopWithHooks(options: StubLoopOptions = {}): StubLoop {
     applyProfile: async () => {},
     useProfile: () => {},
     update: () => {},
+    refreshSystemPrompt: async () => {},
     setThinking: () => {},
     data: () => ({ modelCapabilities: UNKNOWN_CAPABILITY, thinkingLevel: 'off', systemPrompt: '' }),
     getEffectiveThinkingLevel: () => 'off',

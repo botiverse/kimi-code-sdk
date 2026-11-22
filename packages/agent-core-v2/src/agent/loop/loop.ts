@@ -267,6 +267,8 @@ export interface IAgentLoopService extends EffectiveProfileReader {
 
   update(changed: ProfileUpdateData): void;
 
+  refreshSystemPrompt(): Promise<void>;
+
   setModel(model: string): Promise<ProfileSetModelResult>;
 
   setThinking(level: string): void;

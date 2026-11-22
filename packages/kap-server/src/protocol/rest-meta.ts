@@ -13,6 +13,7 @@ export const metaCapabilitiesSchema = z.object({
   interactions_list: z.literal(true),
   session_wait: z.literal(true),
   session_ephemeral_mcp: z.literal(true),
+  session_append_system_prompt: z.literal(true),
 });
 
 export type MetaCapabilities = z.infer<typeof metaCapabilitiesSchema>;

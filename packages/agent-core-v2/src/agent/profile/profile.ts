@@ -138,6 +138,9 @@ export interface IAgentProfileService extends EffectiveProfileReader {
   bind(input: BindAgentInput): Promise<ProfileBindingSnapshot>;
   resolveBinding(input: BindAgentInput, current?: ProfileBindingSnapshot): Promise<ProfileBindingSnapshot>;
   refreshBoundSubagentAllowlist(current?: ProfileBindingSnapshot): Promise<ProfileBindingSnapshot | undefined>;
+  resolveSystemPromptRefresh(
+    current?: ProfileBindingSnapshot,
+  ): Promise<Pick<ProfileUpdateData, 'systemPrompt' | 'environmentDisclosure'> | undefined>;
   prepareUpdate(
     changed: ProfileUpdateData,
     current?: ProfileBindingSnapshot,

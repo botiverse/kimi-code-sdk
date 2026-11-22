@@ -410,6 +410,10 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
     this.profileAdapter.update(changed);
   }
 
+  refreshSystemPrompt(): Promise<void> {
+    return this.profileAdapter.refreshSystemPrompt();
+  }
+
   setModel(alias: string): Promise<ProfileSetModelResult> {
     return this.profileAdapter.setModel(alias);
   }

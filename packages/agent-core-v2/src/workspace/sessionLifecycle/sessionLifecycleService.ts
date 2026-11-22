@@ -60,6 +60,7 @@ import { ensureMainAgent } from '#/session/agentLifecycle/mainAgent';
 import { labelsFromAgentMeta } from '#/session/agentLifecycle/subagentMetadata';
 import { ISessionContext, sessionContextSeed } from '#/session/sessionContext/sessionContext';
 import { sessionEphemeralMcpServersSeed } from '#/session/mcp/ephemeralMcpServers';
+import { sessionRoleAdditionalSeed } from '#/session/profile/sessionRoleAdditional';
 import { sessionAgentProfileCatalogSeed } from '#/session/sessionAgentProfileCatalog/agentProfileCatalogSeed';
 import {
   ISessionMetadata,
@@ -344,6 +345,7 @@ export class SessionLifecycleService extends Disposable implements ISessionLifec
               fs: workdir.fs,
             }],
             ...sessionEphemeralMcpServersSeed(opts.mcpServers ?? {}),
+            ...sessionRoleAdditionalSeed(opts.roleAdditional),
           ],
           configureContainer: (container) => {
             container.anchorKernelEntry(
@@ -511,11 +513,15 @@ export class SessionLifecycleService extends Disposable implements ISessionLifec
       workDir,
       additionalDirs: opts?.additionalDirs,
       mcpServers: opts?.mcpServers,
+      roleAdditional: opts?.roleAdditional,
     }, environment, await this.openWorkdir(environment, workDir));
     try {
       const agents = handle.accessor.get(IAgentLifecycleService);
       if (agents.get(MAIN_AGENT_ID) === undefined) {
         await agents.create({ agentId: MAIN_AGENT_ID });
+      }
+      if (opts?.roleAdditional !== undefined) {
+        await agents.handleOf(MAIN_AGENT_ID)?.accessor.get(IAgentLoopService).refreshSystemPrompt();
       }
       await this.announceCreated({ sessionId, handle, source });
     } catch (error) {

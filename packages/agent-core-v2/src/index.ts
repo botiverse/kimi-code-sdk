@@ -522,6 +522,7 @@ export * from '#/human/interaction/interaction';
 export * from '#/human/interaction/facade';
 export * from '#/agent/interaction/interactionOps';
 export * from '#/session/sessionContext/sessionContext';
+export * from '#/session/profile/sessionRoleAdditional';
 
 export * from '#/agent/interaction/question';
 export {

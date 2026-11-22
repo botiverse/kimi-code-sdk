@@ -379,6 +379,7 @@ export type RestoreSessionResponse = z.infer<typeof restoreSessionResponseSchema
 
 export const resumeSessionBodySchema = z.object({
   mcp_servers: ephemeralMcpServersSchema.optional(),
+  append_system_prompt: z.string().optional(),
   agent_config: sessionAgentConfigPartialSchema.optional(),
 });
 

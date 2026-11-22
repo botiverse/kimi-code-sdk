@@ -245,6 +245,8 @@ class FakeLoopService extends StubEffectiveProfileReader implements IAgentLoopSe
 
   async applyBindingSnapshot(): Promise<void> {}
 
+  async refreshSystemPrompt(): Promise<void> {}
+
   async setModel(model: string) {
     return { model };
   }

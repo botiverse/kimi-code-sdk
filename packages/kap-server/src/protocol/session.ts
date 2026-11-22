@@ -67,6 +67,7 @@ export const sessionCreateSchema = z
     environment_id: z.string().min(1).optional(),
     environment_cwd: z.string().min(1).optional(),
     mcp_servers: ephemeralMcpServersSchema.optional(),
+    append_system_prompt: z.string().optional(),
   })
   .superRefine((value, ctx) => {
     if (value.environment_cwd !== undefined && value.environment_id === undefined) {

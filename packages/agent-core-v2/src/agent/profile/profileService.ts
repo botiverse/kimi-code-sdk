@@ -32,6 +32,7 @@ import type { LoopControl } from '#/agent/loop/configSection';
 import { IAgentEnvironmentService } from '#/agent/environmentBinding/agentEnvironment';
 import { EnvironmentWorkspaceView } from '#/environment/environmentWorkspaceView';
 import { ISessionContext } from '#/session/sessionContext/sessionContext';
+import { ISessionRoleAdditional } from '#/session/profile/sessionRoleAdditional';
 import type { ToolSource } from '#/tool/toolContract';
 import { ISessionWorkspaceContext } from '#/session/workspaceContext/workspaceContext';
 import { ISessionInstructionsProvider } from '#/session/sessionInstructions/instructionsProvider';
@@ -290,6 +291,39 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
       return { ...current, subagents };
     }
     return undefined;
+  }
+
+  async resolveSystemPromptRefresh(
+    current?: ProfileBindingSnapshot,
+  ): Promise<Pick<ProfileUpdateData, 'systemPrompt' | 'environmentDisclosure'> | undefined> {
+    if (this.scopeContext.agentId !== MAIN_AGENT_ID || current?.profileName === undefined) {
+      return undefined;
+    }
+    await this.catalog.ready;
+    await this.identity.resolved();
+    const profile = this.catalog.get(current.profileName);
+    if (profile === undefined) return undefined;
+    await this.sessionToolPolicy.ready;
+    const context = await this.buildSystemPromptContext(profile);
+    const rendered = renderAgentProfilePrompt(profile, context);
+    if (
+      rendered.text === current.systemPrompt &&
+      rendered.environment === current.environmentDisclosure
+    ) {
+      return undefined;
+    }
+    return {
+      systemPrompt: rendered.text,
+      environmentDisclosure: rendered.environment,
+    };
+  }
+
+  private readSessionRoleAdditional(): string | undefined {
+    try {
+      return this.instantiation.invokeFunction((accessor) => accessor.get(ISessionRoleAdditional)).value;
+    } catch {
+      return undefined;
+    }
   }
 
   bind(input: BindAgentInput): Promise<ProfileBindingSnapshot> {
@@ -844,6 +878,8 @@ export class AgentProfileService extends Disposable implements IAgentProfileServ
       shellPath: env.shellPath,
       skills,
       pluginSections,
+      roleAdditional:
+        this.scopeContext.agentId === MAIN_AGENT_ID ? this.readSessionRoleAdditional() : undefined,
       skillActive: this.isToolActiveForProfile(profile, 'Skill'),
       productName: (await this.identity.resolved()).displayName,
       replyStyleGuide: this.bootstrap.args.replyStyleGuide,
