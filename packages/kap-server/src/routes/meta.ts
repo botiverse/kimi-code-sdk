@@ -44,6 +44,7 @@ export function registerMetaRoute(app: RouteHost, opts: MetaRouteOptions): void 
       session_wait: true as const,
       session_ephemeral_mcp: true as const,
       session_append_system_prompt: true as const,
+      steer_parent_correlation: true as const,
     }),
     server_id: opts.serverId,
     started_at: opts.startedAt,

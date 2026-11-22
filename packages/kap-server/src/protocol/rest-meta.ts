@@ -14,6 +14,7 @@ export const metaCapabilitiesSchema = z.object({
   session_wait: z.literal(true),
   session_ephemeral_mcp: z.literal(true),
   session_append_system_prompt: z.literal(true),
+  steer_parent_correlation: z.literal(true),
 });
 
 export type MetaCapabilities = z.infer<typeof metaCapabilitiesSchema>;

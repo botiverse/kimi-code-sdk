@@ -34,6 +34,8 @@ const turnPromptSchema = z.object({
   promptId: z.string().optional(),
   turnId: z.number().optional(),
   trigger: z.enum(['normal', 'notify', 'continue']).optional(),
+  steeredFromTurnId: z.number().int().nonnegative().optional(),
+  steeredFromPromptId: z.string().min(1).optional(),
 });
 
 export class TurnPrompt extends AgentEvent2<z.infer<typeof turnPromptSchema>> {
@@ -48,6 +50,8 @@ export interface TurnPrompt {
   readonly promptId?: string;
   readonly turnId?: number;
   readonly trigger?: 'normal' | 'notify' | 'continue';
+  readonly steeredFromTurnId?: number;
+  readonly steeredFromPromptId?: string;
 }
 
 const turnSteerSchema = z.object({

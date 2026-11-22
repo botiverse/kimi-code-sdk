@@ -400,4 +400,51 @@ describe('loop journal restore', () => {
     expect(Object.isFrozen(restored.input.messages![0]!.content)).toBe(true);
     expect(Object.isFrozen(restored.input.messages![3]!.content)).toBe(true);
   });
+
+  it('records steered parent correlation on turn.prompt and omits it on normal turns', async () => {
+    const persisted: WireRecord[] = [];
+    const journal = new LoopJournal(memoryWire(persisted), 'main');
+
+    const p0 = prompt('prompt-0', 'initial');
+    const p1 = prompt('prompt-1', 'steer-once');
+    const p2 = prompt('prompt-2', 'steer-chain');
+    const p3 = prompt('prompt-3', 'after-idle');
+
+    journal.append({ type: 'prompt.submitted', message: p0 });
+    journal.append({ type: 'turn.started', turnId: 0, trigger: 'normal', message: p0 });
+    journal.append({ type: 'prompt.steered', promptIds: ['prompt-1'], messages: [p1] });
+    journal.append({ type: 'turn.ended', turnId: 0, outcome: { type: 'done' } });
+
+    journal.append({ type: 'turn.started', turnId: 1, trigger: 'notify', message: p1 });
+    journal.append({ type: 'prompt.steered', promptIds: ['prompt-2'], messages: [p2] });
+    journal.append({ type: 'turn.ended', turnId: 1, outcome: { type: 'done' } });
+
+    journal.append({ type: 'turn.started', turnId: 2, trigger: 'notify', message: p2 });
+    journal.append({ type: 'turn.ended', turnId: 2, outcome: { type: 'done' } });
+
+    journal.append({ type: 'prompt.submitted', message: p3 });
+    journal.append({ type: 'turn.started', turnId: 3, trigger: 'normal', message: p3 });
+    journal.append({ type: 'turn.ended', turnId: 3, outcome: { type: 'done' } });
+
+    await journal.settled();
+
+    const turnPrompts = persisted.filter((record) => record.type === 'turn.prompt');
+    expect(turnPrompts).toHaveLength(4);
+    expect(turnPrompts[0]).not.toHaveProperty('steeredFromTurnId');
+    expect(turnPrompts[0]).not.toHaveProperty('steeredFromPromptId');
+    expect(turnPrompts[1]).toMatchObject({
+      promptId: 'prompt-1',
+      turnId: 1,
+      steeredFromTurnId: 0,
+      steeredFromPromptId: 'prompt-0',
+    });
+    expect(turnPrompts[2]).toMatchObject({
+      promptId: 'prompt-2',
+      turnId: 2,
+      steeredFromTurnId: 1,
+      steeredFromPromptId: 'prompt-1',
+    });
+    expect(turnPrompts[3]).not.toHaveProperty('steeredFromTurnId');
+    expect(turnPrompts[3]).not.toHaveProperty('steeredFromPromptId');
+  });
 });

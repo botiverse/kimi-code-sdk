@@ -311,7 +311,12 @@ export class LoopJournal {
   private readonly notify: UserMessage[] = [];
   private readonly steps = new Map<string, StepJournal>();
   private readonly toolCallUuids = new Map<string, string>();
+  private readonly steeredFrom = new Map<
+    string,
+    { readonly turnId: number; readonly promptId?: string }
+  >();
   private turn: PendingTurn | undefined;
+  private activeTurnPromptId: string | undefined;
   private requestingStep: { readonly turnId: number; readonly step: number } | undefined;
 
   constructor(
@@ -342,6 +347,7 @@ export class LoopJournal {
         return;
       case 'prompt.canceled':
         if (event.canceled) {
+          this.steeredFrom.delete(event.promptId);
           const index = this.normal.findIndex((entry) => entry.attributes?.promptId === event.promptId);
           if (index >= 0) this.normal.splice(index, 1);
         }
@@ -353,11 +359,25 @@ export class LoopJournal {
         for (let index = this.normal.length - 1; index >= 0; index -= 1) {
           if (ids.has(this.normal[index]!.attributes?.promptId ?? '')) this.normal.splice(index, 1);
         }
+        if (this.turn !== undefined) {
+          const parent = {
+            turnId: this.turnId,
+            promptId: this.activeTurnPromptId ?? this.turn.entry?.attributes?.promptId,
+          };
+          for (const promptId of event.promptIds) {
+            this.steeredFrom.set(promptId, parent);
+          }
+          for (const entry of entries) {
+            const promptId = entry.attributes?.promptId;
+            if (promptId !== undefined) this.steeredFrom.set(promptId, parent);
+          }
+        }
         this.notify.push(...entries);
         return;
       }
       case 'turn.started':
         this.turnId = event.turnId;
+        this.activeTurnPromptId = event.message?.attributes?.promptId;
         if (event.trigger === 'normal') this.normal.shift();
         this.turn = {
           entry: event.message,
@@ -486,6 +506,7 @@ export class LoopJournal {
       case 'turn.ended': {
         this.writeTurnPrompt();
         this.turn = undefined;
+        this.activeTurnPromptId = undefined;
         if (this.dispatcher !== undefined) return;
         const record: WireRecord = {
           type: 'turn.ended',
@@ -611,24 +632,41 @@ export class LoopJournal {
     const prompt = entry ?? turn.entry;
     const input = prompt?.content ?? [];
     const promptOrigin: PromptOrigin = prompt === undefined ? { kind: 'user' } : origin(prompt);
+    const promptId = prompt?.attributes?.promptId;
+    if (promptId !== undefined && this.activeTurnPromptId === undefined) {
+      this.activeTurnPromptId = promptId;
+    }
+    const steered = promptId === undefined ? undefined : this.steeredFrom.get(promptId);
+    if (steered !== undefined && promptId !== undefined) {
+      this.steeredFrom.delete(promptId);
+    }
+    const steering =
+      steered === undefined
+        ? {}
+        : {
+            steeredFromTurnId: steered.turnId,
+            ...(steered.promptId === undefined ? {} : { steeredFromPromptId: steered.promptId }),
+          };
     if (this.dispatcher === undefined) {
       this.write({
         type: 'turn.prompt',
         agentId: this.agentId,
         input,
         origin: promptOrigin,
-        promptId: prompt?.attributes?.promptId,
+        promptId,
         turnId: this.turnId,
         trigger: turn.trigger,
+        ...steering,
       });
     } else {
       void this.dispatcher.dispatch(new TurnPrompt({
         agentId: this.agentId,
         input,
         origin: promptOrigin,
-        promptId: prompt?.attributes?.promptId,
+        promptId,
         turnId: this.turnId,
         trigger: turn.trigger,
+        ...steering,
       }));
     }
     turn.prompted = true;
@@ -639,6 +677,8 @@ export class LoopJournal {
   private settleContext(messages: readonly Message[], reason: string | undefined): void {
     if (reason === 'compaction') return;
     if (reason === 'clear' || reason === 'context.clear') {
+      this.steeredFrom.clear();
+      this.activeTurnPromptId = undefined;
       this.write({ type: 'context.clear', agentId: this.agentId });
       return;
     }

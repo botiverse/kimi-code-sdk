@@ -79,6 +79,8 @@ interface PendingPrompt {
   readonly turnNumber?: number;
   readonly promptId?: string;
   readonly originKind?: string;
+  readonly steeredFromTurnId?: number;
+  readonly steeredFromPromptId?: string;
 }
 
 interface UndoAnchor {
@@ -152,6 +154,8 @@ export function applyConversationRecord(state: ConversationState, record: WireRe
         turnNumber: numberField(record['turnId']),
         promptId: stringField(record['promptId']),
         originKind: stringField((record['origin'] as { kind?: unknown } | undefined)?.kind),
+        steeredFromTurnId: numberField(record['steeredFromTurnId']),
+        steeredFromPromptId: stringField(record['steeredFromPromptId']),
       };
       return;
     case 'context.append_message':
@@ -695,7 +699,18 @@ function startTurn(state: ConversationState, time: number): ConversationTurn {
     endTurn(state, previous, state.provisionalEnds[previous.turn_id] ?? COMPLETED, time);
     state.implicitlyEnded[previous.turn_id] = true;
   }
-  const turn = addTurn(state, time, 'agent', state.pendingPrompt?.turnNumber);
+  const pending = state.pendingPrompt;
+  const turn = addTurn(state, time, 'agent', pending?.turnNumber);
+  if (pending?.steeredFromTurnId !== undefined) {
+    turn.steered_from_turn_number = pending.steeredFromTurnId;
+    const parentTurn = findTurnByNumber(state, pending.steeredFromTurnId);
+    if (parentTurn !== undefined) {
+      turn.steered_from_turn_id = parentTurn.turn_id;
+    }
+    if (pending.steeredFromPromptId !== undefined) {
+      turn.steered_from_prompt_id = pending.steeredFromPromptId;
+    }
+  }
   state.pendingPrompt = undefined;
   state.openTurnId = turn.turn_id;
   return turn;
