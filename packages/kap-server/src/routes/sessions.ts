@@ -55,6 +55,10 @@ import { SessionMetaUpdated } from '@moonshot-ai/agent-core-v2/session/sessionMe
 import { ErrorCode } from '../protocol/error-codes';
 import { listPendingInteractions } from '../protocol/interaction-wire';
 import type { PendingInteraction } from '../protocol/interaction';
+import {
+  ephemeralMcpServersSchema,
+  fromEphemeralMcpServersWire,
+} from '../protocol/mcp-wire';
 import type { ConversationService } from '../services/conversation/conversationService';
 import { findOnHosts, hostGet, HostSourceError, type HostSources } from '../services/hosts/hostFanout';
 import {
@@ -67,6 +71,7 @@ import {
   deleteSessionResponseSchema,
   forkSessionRequestSchema,
   MAX_SESSION_WAIT_TIMEOUT_MS,
+  resumeSessionRequestSchema,
   sessionCancelResponseSchema,
   sessionWarningsResponseSchema,
   startBtwSessionResponseSchema,
@@ -84,6 +89,7 @@ import {
   type SessionGit,
   type SessionPendingInteraction,
 } from '../protocol/session';
+import { sessionAgentConfigPartialSchema } from '@moonshot-ai/agent-core-v2/app/sessionLegacy/sessionProtocol';
 import { z } from 'zod';
 
 import { errEnvelope, okEnvelope } from '../envelope';
@@ -160,6 +166,8 @@ const sessionActionRequestSchema = z.preprocess(
     timeout_ms: z.number().int().min(0).max(MAX_SESSION_WAIT_TIMEOUT_MS).optional(),
     count: z.number().int().positive().optional(),
     page_size: z.number().int().min(1).max(100).optional(),
+    mcp_servers: ephemeralMcpServersSchema.optional(),
+    agent_config: sessionAgentConfigPartialSchema.optional(),
   }),
 );
 
@@ -259,12 +267,15 @@ export function registerSessionsRoutes(
         const mainAgentBinding = await creationMainAgentBinding(core, agentConfig);
         const { profile: _profile, model: _model, thinking: _thinking, ...settings } = agentConfig;
         const appliesSettings = Object.keys(settings).some((key) => key !== 'tower_base');
+        const mcpServers =
+          body.mcp_servers === undefined ? undefined : fromEphemeralMcpServersWire(body.mcp_servers);
         const handle = await core.accessor.get(ISessionManager).create({
           workspaceId: resolved.id,
           workDir,
           environmentId: body.environment_id,
           environmentCwd: body.environment_cwd,
           mainAgentBinding,
+          mcpServers,
           ensureMainAgent: body.environment_id !== undefined && body.environment_id !== 'local',
           prepare: async (session) => {
             if (Object.keys(custom).length > 0) {
@@ -588,6 +599,7 @@ type SessionAction =
   | 'wait'
   | 'btw'
   | 'restore'
+  | 'resume'
   | 'archive'
   | 'delete'
   | 'reload'
@@ -618,6 +630,7 @@ const sessionActions: ActionTable<SessionAction, SessionActionExtra> = {
   wait: { body: waitSessionRequestSchema, handle: waitSessionAction },
   btw: { handle: btwSessionAction },
   restore: { handle: restoreSessionAction },
+  resume: { body: resumeSessionRequestSchema, handle: resumeSessionAction },
   archive: { handle: archiveSessionAction },
   delete: { handle: deleteSessionAction },
   reload: { handle: reloadSessionAction },
@@ -973,6 +986,65 @@ async function btwSessionAction(ctx: SessionActionCtx): Promise<void> {
   reply.send(okEnvelope({ agent_id: agentId }, req.id));
 }
 
+async function assertSessionIdle(
+  live: ISessionScopeHandle,
+  id: string,
+  action: string,
+): Promise<void> {
+  const agentLifecycle = live.accessor.get(IAgentLifecycleService);
+  for (const agent of agentLifecycle.list()) {
+    const agentHandle = agentLifecycle.handleOf(agent.agentId);
+    if (agentHandle === undefined) continue;
+    if (agentHandle.accessor.get(IAgentLoopService).snapshot().state === 'running') {
+      throw new Error2(
+        ErrorCodes.SESSION_BUSY,
+        `Session "${id}" cannot be ${action} while a turn is running`,
+        { details: { sessionId: id } },
+      );
+    }
+    if (agentHandle.accessor.get(IAgentFullCompactionService).compacting !== null) {
+      throw new Error2(
+        ErrorCodes.SESSION_BUSY,
+        `Session "${id}" cannot be ${action} while compaction is running`,
+        { details: { sessionId: id } },
+      );
+    }
+  }
+}
+
+async function resumeSessionAction(
+  ctx: SessionActionCtx<z.infer<typeof resumeSessionRequestSchema>>,
+): Promise<void> {
+  const { core, req, reply, id, body } = ctx;
+  const mcpServers =
+    body.mcp_servers === undefined ? undefined : fromEphemeralMcpServersWire(body.mcp_servers);
+  const existing = getLiveSessionById(core.accessor, id);
+  if (existing !== undefined && mcpServers !== undefined) {
+    await assertSessionIdle(existing, id, 'resumed with new MCP servers');
+    await closeSessionById(core.accessor, id);
+  }
+  const handle = await resumeSessionById(
+    core.accessor,
+    id,
+    mcpServers === undefined ? undefined : { mcpServers },
+  );
+  if (handle === undefined) {
+    throw new Error2(ErrorCodes.SESSION_NOT_FOUND, `session ${id} does not exist`);
+  }
+  if (body.agent_config !== undefined) {
+    await applyAgentConfigToSession(handle, body.agent_config);
+  }
+  const meta = await handle.accessor.get(ISessionMetadata).read();
+  const sessionCtx = handle.accessor.get(ISessionContext);
+  const session = toWireSession(
+    { ...meta, workspaceId: sessionCtx.workspaceId },
+    sessionCtx.cwd,
+    resolveSessionFacts(core, meta.id),
+  );
+  requestLog(req)?.info({ session_id: id, action: 'resume' }, 'session action completed');
+  reply.send(okEnvelope(session, req.id));
+}
+
 async function restoreSessionAction(ctx: SessionActionCtx): Promise<void> {
   const { core, req, reply, id } = ctx;
   const restored = await core.accessor.get(ISessionManager).restore(id);
@@ -1025,25 +1097,7 @@ async function reloadSessionAction(ctx: SessionActionCtx): Promise<void> {
   const indexEntry =
     live === undefined ? await core.accessor.get(ISessionIndex).get(id) : undefined;
   if (live !== undefined) {
-    const agentLifecycle = live.accessor.get(IAgentLifecycleService);
-    for (const agent of agentLifecycle.list()) {
-      const agentHandle = agentLifecycle.handleOf(agent.agentId);
-      if (agentHandle === undefined) continue;
-      if (agentHandle.accessor.get(IAgentLoopService).snapshot().state === 'running') {
-        throw new Error2(
-          ErrorCodes.SESSION_BUSY,
-          `Session "${id}" cannot be reloaded while a turn is running`,
-          { details: { sessionId: id } },
-        );
-      }
-      if (agentHandle.accessor.get(IAgentFullCompactionService).compacting !== null) {
-        throw new Error2(
-          ErrorCodes.SESSION_BUSY,
-          `Session "${id}" cannot be reloaded while compaction is running`,
-          { details: { sessionId: id } },
-        );
-      }
-    }
+    await assertSessionIdle(live, id, 'reloaded');
   } else if (indexEntry === undefined) {
     throw new Error2(ErrorCodes.SESSION_NOT_FOUND, `session ${id} does not exist`);
   }

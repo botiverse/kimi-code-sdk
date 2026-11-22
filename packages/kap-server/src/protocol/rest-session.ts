@@ -10,6 +10,7 @@ import {
 
 import { ErrorCode } from './error-codes';
 import { pendingInteractionSchema } from './interaction';
+import { ephemeralMcpServersSchema } from './mcp-wire';
 import {
   creationOnlyProfileSchema,
   sessionActivitySchema,
@@ -375,6 +376,20 @@ export type TakeoverSessionResponse = z.infer<typeof takeoverSessionResponseSche
 
 export const restoreSessionResponseSchema = sessionSchema;
 export type RestoreSessionResponse = z.infer<typeof restoreSessionResponseSchema>;
+
+export const resumeSessionBodySchema = z.object({
+  mcp_servers: ephemeralMcpServersSchema.optional(),
+  agent_config: sessionAgentConfigPartialSchema.optional(),
+});
+
+export const resumeSessionRequestSchema = z.preprocess(
+  (value) => (value === undefined ? {} : value),
+  resumeSessionBodySchema,
+);
+export type ResumeSessionRequest = z.infer<typeof resumeSessionRequestSchema>;
+
+export const resumeSessionResponseSchema = sessionSchema;
+export type ResumeSessionResponse = z.infer<typeof resumeSessionResponseSchema>;
 
 export const deleteSessionResponseSchema = z.object({
   deleted: z.literal(true),

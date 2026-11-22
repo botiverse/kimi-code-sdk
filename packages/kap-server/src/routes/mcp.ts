@@ -4,7 +4,6 @@ import {
   ErrorCodes,
   IMcpManagementService,
   isError2,
-  type GlobalMcpServerConfig,
   type McpManagedServer,
   type McpServerAuthBeginResult,
   type McpServerAuthStatus,
@@ -13,13 +12,23 @@ import {
   type Scope,
 } from '@moonshot-ai/agent-core-v2';
 import type { McpServerConfig } from '@moonshot-ai/agent-core-v2/mcpCore/config-schema';
-import { MAX_MCP_TIMEOUT_MS, McpTimeoutMsSchema } from '@moonshot-ai/agent-core-v2/mcpCore/config-schema';
+import { MAX_MCP_TIMEOUT_MS } from '@moonshot-ai/agent-core-v2/mcpCore/config-schema';
 import type { McpServerConfigView } from '@moonshot-ai/agent-core-v2/mcpCore/configView';
 import { z } from 'zod';
 
 import { errEnvelope, okEnvelope } from '../envelope';
 import { defineRoute } from '../middleware/defineRoute';
 import { ErrorCode } from '../protocol/error-codes';
+import {
+  fromGlobalMcpServerConfigWire,
+  fromMcpServerConfigWire,
+  globalMcpServerConfigSchema,
+  mcpServerConfigBodySchema,
+  mcpServerHttpWireSchema,
+  mcpServerSseWireSchema,
+  mcpServerStdioWireSchema,
+  serverNameSchema,
+} from '../protocol/mcp-wire';
 
 interface McpRouteHost {
   get(
@@ -56,9 +65,6 @@ interface McpRouteHost {
   ): unknown;
 }
 
-const stringRecordSchema = z.record(z.string(), z.string());
-const serverNameSchema = z.string().min(1);
-
 const serverNameParamSchema = z.object({ name: serverNameSchema });
 
 const serverScopedQuerySchema = z.object({ cwd: z.string().min(1).optional() });
@@ -67,56 +73,6 @@ const authStatusesQuerySchema = z.object({
   cwd: z.string().min(1).optional(),
   verify: z.enum(['true', 'false']).optional(),
 });
-
-const mcpServerCommonWireFields = {
-  enabled: z.boolean().optional(),
-  deferred: z.boolean().optional(),
-  startup_timeout_ms: McpTimeoutMsSchema.optional(),
-  tool_timeout_ms: McpTimeoutMsSchema.optional(),
-  enabled_tools: z.array(z.string()).optional(),
-  disabled_tools: z.array(z.string()).optional(),
-} as const;
-
-const mcpServerStdioWireSchema = z.object({
-  transport: z.literal('stdio'),
-  command: z.string().min(1),
-  args: z.array(z.string()).optional(),
-  env: stringRecordSchema.optional(),
-  cwd: z.string().optional(),
-  executor: z.enum(['local', 'kaos']).optional(),
-  environment_id: z.string().min(1).optional(),
-  ...mcpServerCommonWireFields,
-});
-
-const mcpServerHttpWireSchema = z.object({
-  transport: z.literal('http'),
-  url: z.string().url(),
-  headers: stringRecordSchema.optional(),
-  auth: z.literal('oauth').optional(),
-  bearer_token_env_var: z.string().min(1).optional(),
-  ...mcpServerCommonWireFields,
-});
-
-const mcpServerSseWireSchema = z.object({
-  transport: z.literal('sse'),
-  url: z.string().url(),
-  headers: stringRecordSchema.optional(),
-  auth: z.literal('oauth').optional(),
-  bearer_token_env_var: z.string().min(1).optional(),
-  ...mcpServerCommonWireFields,
-});
-
-const globalMcpServerConfigSchema = z.discriminatedUnion('transport', [
-  mcpServerStdioWireSchema.extend({ name: serverNameSchema }),
-  mcpServerHttpWireSchema.extend({ name: serverNameSchema }),
-  mcpServerSseWireSchema.extend({ name: serverNameSchema }),
-]);
-
-const mcpServerConfigBodySchema = z.discriminatedUnion('transport', [
-  mcpServerStdioWireSchema,
-  mcpServerHttpWireSchema,
-  mcpServerSseWireSchema,
-]);
 
 const testServerBodySchema = z.object({
   name: serverNameSchema.optional(),
@@ -209,44 +165,6 @@ const mcpServerAuthBeginResultSchema = z.union([
   z.object({ status: z.literal('already-authorized') }),
 ]);
 type McpServerAuthBeginResultWire = z.infer<typeof mcpServerAuthBeginResultSchema>;
-
-type McpServerConfigWire = z.infer<typeof mcpServerConfigBodySchema>;
-type GlobalMcpServerConfigWire = z.infer<typeof globalMcpServerConfigSchema>;
-
-function fromMcpServerConfigWire(wire: McpServerConfigWire): McpServerConfig {
-  const common = {
-    enabled: wire.enabled,
-    deferred: wire.deferred,
-    startupTimeoutMs: wire.startup_timeout_ms,
-    toolTimeoutMs: wire.tool_timeout_ms,
-    enabledTools: wire.enabled_tools,
-    disabledTools: wire.disabled_tools,
-  };
-  if (wire.transport === 'stdio') {
-    return {
-      transport: 'stdio',
-      command: wire.command,
-      args: wire.args,
-      env: wire.env,
-      cwd: wire.cwd,
-      executor: wire.executor,
-      environment_id: wire.environment_id,
-      ...common,
-    };
-  }
-  return {
-    transport: wire.transport,
-    url: wire.url,
-    headers: wire.headers,
-    auth: wire.auth,
-    bearerTokenEnvVar: wire.bearer_token_env_var,
-    ...common,
-  };
-}
-
-function fromGlobalMcpServerConfigWire(wire: GlobalMcpServerConfigWire): GlobalMcpServerConfig {
-  return { ...fromMcpServerConfigWire(wire), name: wire.name };
-}
 
 function toMcpServerConfigDataWire(
   config: McpServerConfig | McpServerConfigView,

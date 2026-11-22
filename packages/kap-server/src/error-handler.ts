@@ -23,6 +23,18 @@ export function installErrorHandler(app: ErrorHandlerHost): void {
         .send(errEnvelope(ErrorCode.VALIDATION_FAILED, err.message, requestId));
       return;
     }
+    if (err.statusCode === 400) {
+      reply
+        .status(200)
+        .send(
+          errEnvelope(
+            ErrorCode.VALIDATION_FAILED,
+            err.message !== undefined && err.message !== '' ? err.message : 'invalid request body',
+            requestId,
+          ),
+        );
+      return;
+    }
     if (isError2(err) && err.code === ErrorCodes.WIRE_VERSION_TOO_LOW) {
       reply
         .status(200)

@@ -6,6 +6,7 @@ import {
   sessionMetadataSchema,
 } from '@moonshot-ai/agent-core-v2/app/sessionLegacy/sessionProtocol';
 
+import { ephemeralMcpServersSchema } from './mcp-wire';
 import { workspaceIdSchema } from './workspace';
 
 export const sessionPendingInteractionSchema = z.enum(['none', 'approval', 'question']);
@@ -65,6 +66,7 @@ export const sessionCreateSchema = z
     workspace_id: workspaceIdSchema.optional(),
     environment_id: z.string().min(1).optional(),
     environment_cwd: z.string().min(1).optional(),
+    mcp_servers: ephemeralMcpServersSchema.optional(),
   })
   .superRefine((value, ctx) => {
     if (value.environment_cwd !== undefined && value.environment_id === undefined) {
