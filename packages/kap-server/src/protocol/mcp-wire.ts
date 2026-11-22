@@ -130,6 +130,7 @@ export function fromGlobalMcpServerConfigWire(
 
 export function fromEphemeralMcpServersWire(
   wire: EphemeralMcpServersWire,
+  defaultStdioEnvironmentId = 'local',
 ): Readonly<Record<string, McpServerConfig>> {
   const result: Record<string, McpServerConfig> = {};
   for (const name of Object.getOwnPropertyNames(wire)) {
@@ -139,8 +140,13 @@ export function fromEphemeralMcpServersWire(
     }
     const entry = wire[name];
     if (entry === undefined) continue;
+    const converted = fromMcpServerConfigWire(entry);
+    const normalized =
+      converted.transport === 'stdio' && converted.environment_id === undefined
+        ? { ...converted, environment_id: defaultStdioEnvironmentId }
+        : converted;
     Object.defineProperty(result, name, {
-      value: fromMcpServerConfigWire(entry),
+      value: normalized,
       enumerable: true,
       configurable: true,
       writable: true,

@@ -15,6 +15,7 @@ import {
   ISessionBtwService,
   ISessionContext,
   ISessionIndex,
+  ISessionMcpHandle,
   ISessionMetadata,
   ISessionRoleAdditional,
   type SessionMeta,
@@ -270,7 +271,9 @@ export function registerSessionsRoutes(
         const { profile: _profile, model: _model, thinking: _thinking, ...settings } = agentConfig;
         const appliesSettings = Object.keys(settings).some((key) => key !== 'tower_base');
         const mcpServers =
-          body.mcp_servers === undefined ? undefined : fromEphemeralMcpServersWire(body.mcp_servers);
+          body.mcp_servers === undefined
+            ? undefined
+            : fromEphemeralMcpServersWire(body.mcp_servers, body.environment_id ?? 'local');
         const handle = await core.accessor.get(ISessionManager).create({
           workspaceId: resolved.id,
           workDir,
@@ -287,6 +290,9 @@ export function registerSessionsRoutes(
             if (appliesSettings) await applyAgentConfigToSession(session, settings);
           },
         });
+        if (mcpServers !== undefined && Object.keys(mcpServers).length > 0) {
+          await handle.accessor.get(ISessionMcpHandle).ready;
+        }
         const metadata = handle.accessor.get(ISessionMetadata);
         if (typeof body.title === 'string') await metadata.setTitle(body.title);
         const meta = await metadata.read();
@@ -1038,6 +1044,9 @@ async function resumeSessionAction(
   const handle = await resumeSessionById(core.accessor, id, resumeOptions);
   if (handle === undefined) {
     throw new Error2(ErrorCodes.SESSION_NOT_FOUND, `session ${id} does not exist`);
+  }
+  if (mcpServers !== undefined && Object.keys(mcpServers).length > 0) {
+    await handle.accessor.get(ISessionMcpHandle).ready;
   }
   if (body.agent_config !== undefined) {
     await applyAgentConfigToSession(handle, body.agent_config);

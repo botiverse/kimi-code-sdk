@@ -159,14 +159,31 @@ export class AgentToolSelectService extends Service implements IAgentToolSelectS
     if (!dynamic) return base ?? this.defaultToolsForDisclosure(disclosure);
     if (disclosure) return base ?? [];
     const loaded = collectLoadedDynamicTools(messages);
+    const liveRegistry = new Map(this.toolRegistry.list().map((info) => [info.name, info] as const));
+    const initialSources = new Map(
+      this.initialToolInfos().map((info) => [info.name, info.source] as const),
+    );
+    const isRemovedMcp = (name: string): boolean =>
+      !liveRegistry.has(name) && (initialSources.get(name) === 'mcp' || isMcpToolName(name));
     const tools = (base ?? [])
-      .filter((tool) => tool.name !== SELECT_TOOLS_TOOL_NAME)
-      .map((tool) => tool.deferred === true ? { ...tool, deferred: undefined } : tool);
+      .filter((tool) => tool.name !== SELECT_TOOLS_TOOL_NAME && !isRemovedMcp(tool.name))
+      .map((tool) => (tool.deferred === true ? { ...tool, deferred: undefined } : tool));
     const names = new Set(tools.map((tool) => tool.name));
     for (const tool of loaded.values()) {
-      if (names.has(tool.name)) continue;
+      if (names.has(tool.name) || isRemovedMcp(tool.name)) continue;
       tools.push({ ...tool, deferred: undefined });
       names.add(tool.name);
+    }
+    for (const info of liveRegistry.values()) {
+      if (info.source !== 'mcp' || names.has(info.name)) continue;
+      if (!this.toolPolicy.isToolActive(info.name, 'mcp')) continue;
+      tools.push({
+        name: info.name,
+        description: info.description,
+        parameters: info.parameters ?? EMPTY_TOOL_PARAMETERS,
+        deferred: undefined,
+      });
+      names.add(info.name);
     }
     return tools.toSorted((left, right) => left.name.localeCompare(right.name));
   }

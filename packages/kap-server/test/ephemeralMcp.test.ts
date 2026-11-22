@@ -85,7 +85,9 @@ function sseToolCall(id: string, name: string, args: string): string {
   );
 }
 
-async function startHttpMcpServer(): Promise<HttpMcpMock> {
+async function startHttpMcpServer(
+  options: { readonly listDelayMs?: number } = {},
+): Promise<HttpMcpMock> {
   const authHeadersSeen: string[] = [];
   const toolCallsSeen: unknown[] = [];
 
@@ -126,26 +128,33 @@ async function startHttpMcpServer(): Promise<HttpMcpMock> {
         return;
       }
       if (msg.method === 'tools/list') {
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id: msg.id,
-            result: {
-              tools: [
-                {
-                  name: 'ping',
-                  description: 'Echoes text over ephemeral HTTP MCP',
-                  inputSchema: {
-                    type: 'object',
-                    properties: { note: { type: 'string' } },
-                    required: ['note'],
+        const respondList = (): void => {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: msg.id,
+              result: {
+                tools: [
+                  {
+                    name: 'ping',
+                    description: 'Echoes text over ephemeral HTTP MCP',
+                    inputSchema: {
+                      type: 'object',
+                      properties: { note: { type: 'string' } },
+                      required: ['note'],
+                    },
                   },
-                },
-              ],
-            },
-          }),
-        );
+                ],
+              },
+            }),
+          );
+        };
+        if ((options.listDelayMs ?? 0) > 0) {
+          setTimeout(respondList, options.listDelayMs);
+        } else {
+          respondList();
+        }
         return;
       }
       if (msg.method === 'tools/call') {
@@ -536,4 +545,259 @@ describe('KAP per-session ephemeral mcp_servers', () => {
     releaseLlm();
     await waitIdle(base, sid);
   }, 30_000);
+
+  it('waits for delayed HTTP MCP discovery on create so first and second prompts receive the tool', async () => {
+    mcpServer = await startHttpMcpServer({ listDelayMs: 500 });
+    llm = await startMockLlm((body) => {
+      const parsed = JSON.parse(body) as {
+        messages?: Array<{ role?: string; content?: unknown }>;
+        tools?: Array<{ function?: { name?: string } }>;
+      };
+      const hasPing = parsed.tools?.some((t) => t.function?.name === 'mcp__ephe__ping') ?? false;
+      const messages = parsed.messages ?? [];
+      if (messages.at(-1)?.role === 'tool') {
+        return sseText('tool done');
+      }
+      if (hasPing) {
+        return sseToolCall('call_ping_delayed', 'mcp__ephe__ping', JSON.stringify({ note: 'delayed' }));
+      }
+      return sseText('no_ping');
+    });
+    const base = await boot();
+
+    const created = await callJson<{ id: string }>(
+      base,
+      'POST',
+      '/api/v1/sessions',
+      JSON.stringify({
+        cwd: workspace,
+        mcp_servers: {
+          ephe: { transport: 'http', url: mcpServer.url },
+        },
+      }),
+    );
+    expect(created.body.code).toBe(0);
+    const sid = created.body.data.id;
+
+    const p1 = await callJson(
+      base,
+      'POST',
+      `/api/v1/sessions/${encodeURIComponent(sid)}/prompts`,
+      JSON.stringify({ content: [{ type: 'text', text: 'first turn' }], model: 'stub', permission_mode: 'yolo' }),
+    );
+    expect(p1.body.code).toBe(0);
+    await waitIdle(base, sid);
+
+    const p2 = await callJson(
+      base,
+      'POST',
+      `/api/v1/sessions/${encodeURIComponent(sid)}/prompts`,
+      JSON.stringify({ content: [{ type: 'text', text: 'second turn' }], model: 'stub', permission_mode: 'yolo' }),
+    );
+    expect(p2.body.code).toBe(0);
+    await waitIdle(base, sid);
+
+    expect(mcpServer.toolCallsSeen).toHaveLength(2);
+    const firstTools = (JSON.parse(llm.hits[0]!) as { tools?: Array<{ function?: { name?: string } }> }).tools ?? [];
+    expect(firstTools.some((t) => t.function?.name === 'mcp__ephe__ping')).toBe(true);
+  }, 30_000);
+
+  it('defaults stdio ephemeral MCP environment_id to local so tools are exposed without explicit binding', async () => {
+    llm = await startMockLlm((body) => {
+      const parsed = JSON.parse(body) as {
+        messages?: Array<{ role?: string; content?: unknown }>;
+        tools?: Array<{ function?: { name?: string } }>;
+      };
+      const hasPing = parsed.tools?.some((t) => t.function?.name === 'mcp__stdio__ping') ?? false;
+      const messages = parsed.messages ?? [];
+      if (messages.at(-1)?.role === 'tool') {
+        return sseText('stdio tool done');
+      }
+      if (hasPing) {
+        return sseToolCall('call_ping_stdio', 'mcp__stdio__ping', JSON.stringify({ note: 'local' }));
+      }
+      return sseText('no_ping');
+    });
+    const base = await boot();
+    const traceFile = join(workspace as string, 'stdio-trace.jsonl');
+    const stdioScript = join(workspace as string, 'stdio-mcp.mjs');
+    await writeFile(
+      stdioScript,
+      [
+        'import { appendFileSync } from "node:fs";',
+        'import { createInterface } from "node:readline";',
+        'const rl = createInterface({ input: process.stdin });',
+        'rl.on("line", (line) => {',
+        '  const msg = JSON.parse(line);',
+        '  if (process.env.TRACE_FILE) appendFileSync(process.env.TRACE_FILE, JSON.stringify(msg) + "\\n");',
+        '  if (msg.id === undefined) return;',
+        '  let result = {};',
+        '  if (msg.method === "initialize") result = { protocolVersion: msg.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "stdio-mock", version: "1.0.0" } };',
+        '  else if (msg.method === "tools/list") result = { tools: [{ name: "ping", description: "Stdio ping", inputSchema: { type: "object", properties: { note: { type: "string" } } } }] };',
+        '  else if (msg.method === "tools/call") result = { content: [{ type: "text", text: "pong:stdio" }] };',
+        '  process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result }) + "\\n");',
+        '});',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const created = await callJson<{ id: string }>(
+      base,
+      'POST',
+      '/api/v1/sessions',
+      JSON.stringify({
+        cwd: workspace,
+        mcp_servers: {
+          stdio: {
+            transport: 'stdio',
+            command: process.execPath,
+            args: [stdioScript],
+            env: { TRACE_FILE: traceFile },
+          },
+        },
+      }),
+    );
+    expect(created.body.code).toBe(0);
+    const sid = created.body.data.id;
+
+    const p1 = await callJson(
+      base,
+      'POST',
+      `/api/v1/sessions/${encodeURIComponent(sid)}/prompts`,
+      JSON.stringify({ content: [{ type: 'text', text: 'call stdio tool' }], model: 'stub', permission_mode: 'yolo' }),
+    );
+    expect(p1.body.code).toBe(0);
+    await waitIdle(base, sid);
+
+    expect(llm.hits.length).toBeGreaterThanOrEqual(2);
+    const firstHit = JSON.parse(llm.hits[0]!) as { tools?: Array<{ function?: { name?: string } }> };
+    expect(firstHit.tools?.some((t) => t.function?.name === 'mcp__stdio__ping')).toBe(true);
+    const secondHit = JSON.parse(llm.hits[1]!) as { messages?: Array<{ role?: string; content?: unknown }> };
+    expect(JSON.stringify(secondHit.messages ?? [])).toContain('pong:stdio');
+  }, 30_000);
+
+  it('drops removed MCP schemas on cold omitted resume and explicit empty clear, and accepts newly attached servers on resume', async () => {
+    mcpServer = await startHttpMcpServer();
+    llm = await startMockLlm((body) => {
+      const parsed = JSON.parse(body) as {
+        messages?: Array<{ role?: string; content?: unknown }>;
+        tools?: Array<{ function?: { name?: string } }>;
+      };
+      const hasPing = parsed.tools?.some((t) => t.function?.name === 'mcp__ephe__ping') ?? false;
+      const messages = parsed.messages ?? [];
+      if (messages.at(-1)?.role === 'tool') {
+        return sseText('tool done');
+      }
+      if (hasPing) {
+        return sseToolCall('call_ping_1', 'mcp__ephe__ping', JSON.stringify({ note: 'ok' }));
+      }
+      return sseText('no_ping');
+    });
+    const base = await boot();
+
+    const withMcp = await callJson<{ id: string }>(
+      base,
+      'POST',
+      '/api/v1/sessions',
+      JSON.stringify({
+        cwd: workspace,
+        mcp_servers: { ephe: { transport: 'http', url: mcpServer.url } },
+      }),
+    );
+    const sidA = withMcp.body.data.id;
+    await callJson(
+      base,
+      'POST',
+      `/api/v1/sessions/${encodeURIComponent(sidA)}/prompts`,
+      JSON.stringify({ content: [{ type: 'text', text: 'use tool' }], model: 'stub', permission_mode: 'yolo' }),
+    );
+    await waitIdle(base, sidA);
+    expect(mcpServer.toolCallsSeen).toHaveLength(1);
+
+    await closeSessionById(server!.core.accessor, sidA);
+    const omittedResume = await callJson(
+      base,
+      'POST',
+      `/api/v1/sessions/${encodeURIComponent(sidA)}:resume`,
+      JSON.stringify({}),
+    );
+    expect(omittedResume.body.code).toBe(0);
+    const hitBeforeOmitted = llm.hits.length;
+    await callJson(
+      base,
+      'POST',
+      `/api/v1/sessions/${encodeURIComponent(sidA)}/prompts`,
+      JSON.stringify({ content: [{ type: 'text', text: 'after omit' }], model: 'stub', permission_mode: 'yolo' }),
+    );
+    await waitIdle(base, sidA);
+    const omittedHit = JSON.parse(llm.hits[hitBeforeOmitted]!) as { tools?: Array<{ function?: { name?: string } }> };
+    expect(omittedHit.tools?.some((t) => t.function?.name === 'mcp__ephe__ping')).toBe(false);
+
+    const reattached = await callJson(
+      base,
+      'POST',
+      `/api/v1/sessions/${encodeURIComponent(sidA)}:resume`,
+      JSON.stringify({ mcp_servers: { ephe: { transport: 'http', url: mcpServer.url } } }),
+    );
+    expect(reattached.body.code).toBe(0);
+    await callJson(
+      base,
+      'POST',
+      `/api/v1/sessions/${encodeURIComponent(sidA)}/prompts`,
+      JSON.stringify({ content: [{ type: 'text', text: 'after reattach' }], model: 'stub', permission_mode: 'yolo' }),
+    );
+    await waitIdle(base, sidA);
+    expect(mcpServer.toolCallsSeen).toHaveLength(2);
+
+    const cleared = await callJson(
+      base,
+      'POST',
+      `/api/v1/sessions/${encodeURIComponent(sidA)}:resume`,
+      JSON.stringify({ mcp_servers: {} }),
+    );
+    expect(cleared.body.code).toBe(0);
+    const hitBeforeCleared = llm.hits.length;
+    await callJson(
+      base,
+      'POST',
+      `/api/v1/sessions/${encodeURIComponent(sidA)}/prompts`,
+      JSON.stringify({ content: [{ type: 'text', text: 'after clear' }], model: 'stub', permission_mode: 'yolo' }),
+    );
+    await waitIdle(base, sidA);
+    const clearedHit = JSON.parse(llm.hits[hitBeforeCleared]!) as { tools?: Array<{ function?: { name?: string } }> };
+    expect(clearedHit.tools?.some((t) => t.function?.name === 'mcp__ephe__ping')).toBe(false);
+    expect(mcpServer.toolCallsSeen).toHaveLength(2);
+
+    const withoutMcp = await callJson<{ id: string }>(
+      base,
+      'POST',
+      '/api/v1/sessions',
+      JSON.stringify({ cwd: workspace }),
+    );
+    const sidB = withoutMcp.body.data.id;
+    await callJson(
+      base,
+      'POST',
+      `/api/v1/sessions/${encodeURIComponent(sidB)}/prompts`,
+      JSON.stringify({ content: [{ type: 'text', text: 'initial without mcp' }], model: 'stub', permission_mode: 'yolo' }),
+    );
+    await waitIdle(base, sidB);
+    expect(mcpServer.toolCallsSeen).toHaveLength(2);
+
+    const attachedOnResume = await callJson(
+      base,
+      'POST',
+      `/api/v1/sessions/${encodeURIComponent(sidB)}:resume`,
+      JSON.stringify({ mcp_servers: { ephe: { transport: 'http', url: mcpServer.url } } }),
+    );
+    expect(attachedOnResume.body.code).toBe(0);
+    await callJson(
+      base,
+      'POST',
+      `/api/v1/sessions/${encodeURIComponent(sidB)}/prompts`,
+      JSON.stringify({ content: [{ type: 'text', text: 'now with mcp' }], model: 'stub', permission_mode: 'yolo' }),
+    );
+    await waitIdle(base, sidB);
+    expect(mcpServer.toolCallsSeen).toHaveLength(3);
+  }, 45_000);
 });
