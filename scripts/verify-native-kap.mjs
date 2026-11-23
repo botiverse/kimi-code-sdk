@@ -33,6 +33,8 @@ const isolatedEnv = {
   ...process.env,
   HOME: tempHome,
   KIMI_CODE_HOME: tempHome,
+  KIMI_CODE_CACHE_DIR: join(tempHome, 'cache'),
+  XDG_CACHE_HOME: join(tempHome, 'xdg-cache'),
   USERPROFILE: tempHome,
   APPDATA: join(tempHome, 'appdata'),
   LOCALAPPDATA: join(tempHome, 'localappdata'),
@@ -127,7 +129,7 @@ try {
 } catch (err) {
   expect('KAP web --json /api/v1/meta probe succeeds', false, err instanceof Error ? err.message : String(err));
 } finally {
-  if (child && child.exitCode === null && child.signalCode === null) {
+  if (child && child.pid !== undefined && child.exitCode === null && child.signalCode === null) {
     child.kill('SIGTERM');
     await new Promise((done) => {
       const forceTimer = setTimeout(() => {

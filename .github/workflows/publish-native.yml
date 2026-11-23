@@ -38,7 +38,7 @@ jobs:
             echo "ERROR: expected tag format native/v<version>, got $TAG" >&2
             exit 1
           fi
-          git fetch --no-tags origin main
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
             echo "ERROR: tag $TAG ($GITHUB_SHA) is not on origin/main" >&2
             exit 1
@@ -128,7 +128,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build Kimi web assets
+        shell: bash
         run: |
+          set -euo pipefail
           node apps/kimi-code/scripts/sync-web-dist.mjs
           node apps/kimi-code/scripts/check-web-assets.mjs
 
@@ -141,7 +143,12 @@ jobs:
         run: pnpm --filter @moonshot-ai/kimi-code run test:native:smoke
 
       - name: Run KAP capability and OAR identity probe
-        run: node .mirror-main/scripts/verify-native-kap.mjs "apps/kimi-code/dist-native/bin/${{ matrix.target }}/${{ matrix.exe }}" "${{ needs.resolve.outputs.version }}"
+        env:
+          TARGET: ${{ matrix.target }}
+          EXE: ${{ matrix.exe }}
+          EXPECTED_VERSION: ${{ needs.resolve.outputs.version }}
+        shell: bash
+        run: node .mirror-main/scripts/verify-native-kap.mjs "apps/kimi-code/dist-native/bin/$TARGET/$EXE" "$EXPECTED_VERSION"
 
       - name: Package native zip and sha256
         run: pnpm --filter @moonshot-ai/kimi-code run package:native
