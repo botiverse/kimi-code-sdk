@@ -60,6 +60,8 @@ Published to dist-tag `botiverse` (`latest` left at `0.26.0`) from branch `patch
 
 **Gates:** `repackage-sdk.mjs --cli-dir apps/kimi-code` verifies KAP capability markers in `dist/main.mjs`, merges runtime dependencies (`chokidar`, `qrcode`, `ws`), omits `postinstall`, and records `botiverse.cli`. `verify-mirror-surface.mjs` checks `bin.kimi`, `kimi --version`, `kimi acp --help`, and boots `kimi web --json --host 127.0.0.1 --port 0` against an isolated home directory to confirm `GET /api/v1/meta` reports all required KAP capabilities.
 
+**Standalone native binaries (`native/v2.7.2-botiverse.1`):** `.github/workflows/publish-native.yml` runs on `native/v*` tags on `main`, checks out the pinned CLI commit from `native-releases.json`, builds standalone Node 24 SEA executables across `linux-x64`, `linux-arm64`, `darwin-arm64`, `darwin-x64`, and `win32-x64`, runs `test:native:smoke` plus `scripts/verify-native-kap.mjs` (`/api/v1/meta` capability probe), verifies every `.zip` and `.zip.sha256`, and publishes all `.zip` archives and `.zip.sha256` files together on the GitHub Release alongside both archive and unpacked binary SHA-256 checksums in the release notes (Linux binaries are unsigned ELF, macOS binaries are ad-hoc signed, and `win32-x64` is unsigned `kimi.exe`).
+
 ---
 
 ## @botiverse/kimi-code-sdk@2.3.1-botiverse.1  (upstream `@moonshot-ai/kimi-code@2.3.1`)
