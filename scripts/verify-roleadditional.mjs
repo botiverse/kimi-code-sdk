@@ -51,6 +51,28 @@ const check = (ok, label) => {
   if (!ok) failures += 1;
 };
 
+// kimi-code 2.x KAP CLI (-botiverse.* with bin.kimi): assert patch-specific KAP
+// markers in the bundled CLI alongside roleAdditional.
+if (pkg.bin?.kimi && pkg.botiverse?.cli) {
+  const mainPath = join(outDir, 'dist/main.mjs');
+  if (!existsSync(mainPath)) {
+    console.error(`verify-roleadditional: missing ${mainPath}`);
+    process.exit(2);
+  }
+  const mainJs = readFileSync(mainPath, 'utf8');
+  check(typeof pkg.botiverse.cli.version === 'string' && /-botiverse\./.test(pkg.botiverse.cli.version), 'package.json records patched botiverse.cli.version');
+  check(mainJs.includes('session_ephemeral_mcp'), 'dist/main.mjs advertises session_ephemeral_mcp capability');
+  check(mainJs.includes('session_append_system_prompt'), 'dist/main.mjs advertises session_append_system_prompt capability');
+  check(mainJs.includes('steer_parent_correlation'), 'dist/main.mjs advertises steer_parent_correlation capability');
+  check(mainJs.includes('append_system_prompt'), 'dist/main.mjs carries append_system_prompt plumbing');
+  if (failures) {
+    console.log(`verify-roleadditional: FAIL (${failures} failures)`);
+    process.exit(1);
+  }
+  console.log(`verify-roleadditional: PASS (${pkg.name}@${pkg.version} carries the KAP CLI patch stack)`);
+  process.exit(0);
+}
+
 // kimi-code 2.x (agent-core-v2): the patch is a harness option plus a resume
 // refresh; assert its own symbols, which upstream does not emit.
 if (!/var LocalKaos = class LocalKaos\b/.test(js)) {

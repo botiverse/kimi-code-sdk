@@ -13,7 +13,8 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 
 | upstream CLI tag (mirror) | npm `@botiverse/kimi-code-sdk@` |
 | --- | --- |
-| `@moonshot-ai/kimi-code@2.3.1` | `2.3.1-botiverse.1` (current `botiverse` tag; 2026-11-06; patch-branch `patch-2.3.1-botiverse`; adds `rebuildLastLlmRequest` and `llm.request.messagesHash` on top of `.0`) **and** `2.3.1-botiverse.0` (2026-10-24; surface: `KimiHarnessOptions.roleAdditional` + `baseEnv`) |
+| `@moonshot-ai/kimi-code@2.7.2` | `2.7.2-botiverse.1` (current `botiverse` tag; 2026-11-23; patch-branch `patch-2.7.2-botiverse`; ships `"bin": { "kimi": "./dist/main.mjs" }` KAP CLI with per-session ephemeral MCP servers, per-session `append_system_prompt`, parent-turn steer correlation, and MCP readiness fixes, alongside the `node-sdk` bundle) |
+| `@moonshot-ai/kimi-code@2.3.1` | `2.3.1-botiverse.1` (2026-11-06; patch-branch `patch-2.3.1-botiverse`; adds `rebuildLastLlmRequest` and `llm.request.messagesHash` on top of `.0`) **and** `2.3.1-botiverse.0` (2026-10-24; surface: `KimiHarnessOptions.roleAdditional` + `baseEnv`) |
 | `@moonshot-ai/kimi-code@2.2.0` | `2.2.0-botiverse.0` (**never published** — the push-tag trigger did not fire; superseded by 2.3.1-botiverse.0. Patch-branch `patch-2.2.0-botiverse`; node-sdk source 0.21.0) |
 | `@moonshot-ai/kimi-code@0.34.0` | `0.34.0-botiverse.0` (was the `botiverse` tag until 2.3.1-botiverse.0 shipped; 2026-08-11; surface extension `LocalKaos`+`Kaos` **+ `roleAdditional`**; patch-branch `kai/trial-0.34.0-roleadditional`; node-sdk source 0.15.3) |
 | _(rows below are BACKFILLED FROM NPM, dates only)_ | ⚠️ **this table went unmaintained between 0.20.1 and 0.34.0** — the following were published but never recorded here. Interface deltas for them are NOT written up; do not read absence below as "no change". |
@@ -43,6 +44,21 @@ The repackaged dist-only SDK is published to npm as `@botiverse/kimi-code-sdk`. 
 - Upstream doesn't release → **we don't publish a pure repackage**. We may still publish a `-botiverse.<n>` pre-release against the most recent upstream tag if a mirror-side surface extension is needed.
 
 Rationale: 1:1 alignment with the upstream tag is preserved as the default install target so consumers reading the upstream Kimi Code release notes get exactly the upstream-shape mirror. Mirror-side surface additions are deliberate Botiverse-side changes that should not pretend to be upstream — the pre-release suffix surfaces that distinction. Earlier `0.9.3` and `0.9.4` (which followed the internal node-sdk version) are deprecated on npm in favor of `0.15.0`. The `repackage-sdk.mjs` script's `npm-version-override` arg is the mechanism for the suffix: pass `0.18.0-botiverse.0` when cutting an extended release.
+
+---
+
+## @botiverse/kimi-code-sdk@2.7.2-botiverse.1  (upstream `@moonshot-ai/kimi-code@2.7.2`)
+
+Published to dist-tag `botiverse` (`latest` left at `0.26.0`) from branch `patch-2.7.2-botiverse`.
+
+**Packaging change:** reuses `@botiverse/kimi-code-sdk` to distribute both `packages/node-sdk` and the patched KAP CLI (`apps/kimi-code/dist/main.mjs`, `dist/search-worker.mjs`, `dist-web/`, `native/`) under `"bin": { "kimi": "./dist/main.mjs" }`. `scripts.postinstall` is intentionally omitted so installing into a private OAR/Raft prefix never modifies the user's global `kimi` shim, while the CLI continues to read `~/.kimi-code`. Consumers point `OAR_KIMI_BIN` at the installed prefix bin.
+
+**Patched KAP capabilities (`GET /api/v1/meta` `data.capabilities`):**
+- `session_ephemeral_mcp: true`: per-session ephemeral MCP servers on create and resume without mutating shared `mcp.json`, plus MCP readiness wait, default stdio `environment_id`, and dynamic MCP tool sync.
+- `session_append_system_prompt: true`: per-session `append_system_prompt` rendered outside compressible history.
+- `steer_parent_correlation: true`: parent turn correlation for steered turns on WebSocket frames and session history.
+
+**Gates:** `repackage-sdk.mjs --cli-dir apps/kimi-code` verifies KAP capability markers in `dist/main.mjs`, merges runtime dependencies (`chokidar`, `qrcode`, `ws`), omits `postinstall`, and records `botiverse.cli`. `verify-mirror-surface.mjs` checks `bin.kimi`, `kimi --version`, `kimi acp --help`, and boots `kimi web --json --host 127.0.0.1 --port 0` against an isolated home directory to confirm `GET /api/v1/meta` reports all required KAP capabilities.
 
 ---
 

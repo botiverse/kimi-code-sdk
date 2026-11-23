@@ -38,6 +38,15 @@ on:
         description: 'npm package version to publish (default = upstream node-sdk pkg.version; override when bundled-implementation refresh warrants a Botiverse-side patch-bump)'
         required: false
         default: ''
+      include_cli:
+        description: 'Also build and package apps/kimi-code as bin.kimi (auto detects -botiverse.* CLI branches)'
+        type: choice
+        options:
+          - auto
+          - 'true'
+          - 'false'
+        required: false
+        default: auto
       dry_run:
         description: 'Dry run (build + pack + publish --dry-run, no real publish)'
         type: boolean
@@ -88,39 +97,79 @@ jobs:
           # source of truth (we pin pnpm via kimi-code's `packageManager` field).
           package-manager-cache: false
 
+      - name: Detect CLI packaging mode
+        id: mode
+        run: |
+          REQUESTED="${{ inputs.include_cli || 'auto' }}"
+          if [ "$REQUESTED" = "true" ]; then
+            echo "include_cli=true" >> "$GITHUB_OUTPUT"
+          elif [ "$REQUESTED" = "false" ]; then
+            echo "include_cli=false" >> "$GITHUB_OUTPUT"
+          elif [ -f apps/kimi-code/package.json ] && node -e 'process.exit(/-botiverse\./.test(require("./apps/kimi-code/package.json").version) ? 0 : 1)'; then
+            echo "include_cli=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "include_cli=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Use npm with OIDC trusted-publishing support
         run: npm install -g npm@latest   # trusted publishing needs npm >= 11.5
 
-      - name: Build node-sdk (scoped install of its closure only)
+      - name: Build packages
         run: |
           corepack enable
-          pnpm install --frozen-lockfile --filter "@moonshot-ai/kimi-code-sdk..."
-          pnpm --filter @moonshot-ai/kimi-code-sdk build
+          if [ "${{ steps.mode.outputs.include_cli }}" = "true" ]; then
+            pnpm install --frozen-lockfile
+            pnpm --filter @moonshot-ai/kimi-code-sdk build
+            pnpm --filter @moonshot-ai/kimi-code build
+          else
+            pnpm install --frozen-lockfile --filter "@moonshot-ai/kimi-code-sdk..."
+            pnpm --filter @moonshot-ai/kimi-code-sdk build
+          fi
 
-      - name: Compare tag version vs node-sdk source version
-        if: steps.resolve.outputs.expected_version != ''
+      - name: Compare tag version vs source version
         id: version_check
         run: |
-          SRC_VER=$(node -p "require('./packages/node-sdk/package.json').version")
-          EXP="${{ steps.resolve.outputs.expected_version }}"
-          if [ "$SRC_VER" = "$EXP" ]; then
-            echo "match: tag v$EXP == source $SRC_VER (no override)"
-            echo "override=" >> "$GITHUB_OUTPUT"
+          if [ "${{ steps.mode.outputs.include_cli }}" = "true" ]; then
+            SRC_VER=$(node -p "require('./apps/kimi-code/package.json').version")
           else
-            echo "::notice::publish tag v$EXP differs from upstream node-sdk source $SRC_VER — publishing as Botiverse-side override (independent npm cadence; see RELEASES.md mapping table)."
+            SRC_VER=$(node -p "require('./packages/node-sdk/package.json').version")
+          fi
+          EXP="${{ steps.resolve.outputs.expected_version }}"
+          if [ -z "$EXP" ]; then
+            if [ "${{ steps.mode.outputs.include_cli }}" = "true" ]; then
+              echo "override=$SRC_VER" >> "$GITHUB_OUTPUT"
+            else
+              echo "override=" >> "$GITHUB_OUTPUT"
+            fi
+          elif [ "$SRC_VER" = "$EXP" ]; then
+            echo "match: target v$EXP == source $SRC_VER"
+            if [ "${{ steps.mode.outputs.include_cli }}" = "true" ]; then
+              echo "override=$EXP" >> "$GITHUB_OUTPUT"
+            else
+              echo "override=" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "::notice::publish version $EXP differs from source $SRC_VER - publishing as Botiverse-side override (see RELEASES.md mapping table)."
             echo "override=$EXP" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Repackage -> @botiverse/kimi-code-sdk
-        run: node .mirror-main/scripts/repackage-sdk.mjs packages/node-sdk ./.out-sdk "${{ steps.resolve.outputs.build_ref }}" "${{ steps.version_check.outputs.override }}"
-
-      - name: Verify mirror surface + roleAdditional patch stack
         run: |
-          # Install the repackaged dist's peer deps so verify-mirror-surface's
-          # runtime import check actually RUNS. Without node_modules present it
-          # prints "skip runtime import checks" and the strongest assertion in
-          # RELEASES.md (e) silently never executes.
-          (cd .out-sdk && npm install --no-audit --no-fund --omit=dev --silent || true)
+          CLI_ARGS=""
+          if [ "${{ steps.mode.outputs.include_cli }}" = "true" ]; then
+            CLI_ARGS="--cli-dir apps/kimi-code"
+          fi
+          node .mirror-main/scripts/repackage-sdk.mjs packages/node-sdk ./.out-sdk "${{ steps.resolve.outputs.build_ref }}" "${{ steps.version_check.outputs.override }}" $CLI_ARGS
+
+      - name: Verify mirror surface + patch stack
+        run: |
+          # Install the repackaged dist's runtime deps so verify-mirror-surface's
+          # runtime import and KAP CLI checks actually run.
+          if [ "${{ steps.mode.outputs.include_cli }}" = "true" ]; then
+            (cd .out-sdk && npm install --no-audit --no-fund --omit=dev --silent)
+          else
+            (cd .out-sdk && npm install --no-audit --no-fund --omit=dev --silent || true)
+          fi
           node .mirror-main/scripts/verify-mirror-surface.mjs ./.out-sdk
           node .mirror-main/scripts/verify-roleadditional.mjs ./.out-sdk
 

@@ -16,9 +16,14 @@
 // The verifier runs against the PUBLISHED-shape directory (not the source
 // tree), so it catches the same bytes consumers will install.
 
-import { readFileSync, existsSync } from 'node:fs';
+import { execFile, spawn } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 const [, , outArg] = process.argv;
 if (!outArg) {
@@ -49,9 +54,135 @@ function expect(label, ok, detail) {
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
 console.log(`verify: ${pkg.name}@${pkg.version}`);
 
+// kimi-code 2.x KAP CLI (-botiverse.* with bin.kimi): verify both the node-sdk
+// entry and the bundled KAP CLI binary (dist/main.mjs + search-worker.mjs + /meta capabilities).
+const mjsSource = readFileSync(mjsPath, 'utf8');
+if (/-botiverse\./.test(pkg.version) && pkg.bin?.kimi) {
+  const mainPath = join(outDir, 'dist', 'main.mjs');
+  const workerPath = join(outDir, 'dist', 'search-worker.mjs');
+  expect('package.json sets bin.kimi to ./dist/main.mjs', pkg.bin.kimi === './dist/main.mjs', String(pkg.bin.kimi));
+  expect('dist/main.mjs exists', existsSync(mainPath));
+  expect('dist/search-worker.mjs exists', existsSync(workerPath));
+  expect('package.json omits scripts.postinstall', pkg.scripts?.postinstall === undefined);
+
+  if (existsSync(mainPath)) {
+    const mainJs = readFileSync(mainPath, 'utf8');
+    expect('dist/main.mjs starts with node shebang', mainJs.startsWith('#!/usr/bin/env node\n'));
+    for (const cap of ['session_ephemeral_mcp', 'session_append_system_prompt', 'steer_parent_correlation']) {
+      expect(`dist/main.mjs carries KAP capability ${cap}`, mainJs.includes(cap));
+    }
+  }
+  for (const dep of ['chokidar', 'qrcode', 'ws']) {
+    expect(`package.json declares CLI runtime dependency ${dep}`, Boolean(pkg.dependencies?.[dep]));
+  }
+
+  if (existsSync(join(outDir, 'node_modules'))) {
+    let mod;
+    try {
+      mod = await import(pathToFileURL(mjsPath).href);
+    } catch (err) {
+      expect('dist/index.mjs is importable', false, err instanceof Error ? err.message : String(err));
+    }
+    if (mod) {
+      expect('`createKimiHarness` resolves to a function', typeof mod.createKimiHarness === 'function');
+    }
+
+    try {
+      const { stdout: verOut, stderr: verErr } = await execFileAsync(process.execPath, [mainPath, '--version'], { timeout: 10_000 });
+      const versionOutput = `${verOut}${verErr}`;
+      expect(`kimi --version includes ${pkg.version}`, versionOutput.includes(pkg.version), versionOutput.trim());
+    } catch (err) {
+      expect('kimi --version runs cleanly', false, err instanceof Error ? err.message : String(err));
+    }
+
+    try {
+      const { stdout: acpOut, stderr: acpErr } = await execFileAsync(process.execPath, [mainPath, 'acp', '--help'], { timeout: 10_000 });
+      const acpHelp = `${acpOut}${acpErr}`;
+      expect('kimi acp --help matches OAR identity pattern', /^\s*Usage:\s+kimi(?:\.exe)?\s+acp\b/imu.test(acpHelp));
+    } catch (err) {
+      expect('kimi acp --help runs cleanly', false, err instanceof Error ? err.message : String(err));
+    }
+
+    const tempHome = mkdtempSync(join(tmpdir(), 'kimi-verify-kap-'));
+    const child = spawn(process.execPath, [mainPath, 'web', '--json', '--host', '127.0.0.1', '--port', '0'], {
+      env: { ...process.env, HOME: tempHome, KIMI_CODE_HOME: tempHome },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    try {
+      const boot = await new Promise((resolveBoot, rejectBoot) => {
+        let out = '';
+        let errText = '';
+        const timer = setTimeout(() => {
+          rejectBoot(new Error(`timed out waiting for KAP boot line; stdout=${out}; stderr=${errText}`));
+        }, 15_000);
+        child.stdout.on('data', (chunk) => {
+          out += chunk.toString();
+          for (const line of out.split(/\r?\n/)) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('{')) continue;
+            try {
+              const parsed = JSON.parse(trimmed);
+              if (typeof parsed.origin === 'string' && typeof parsed.token === 'string') {
+                clearTimeout(timer);
+                resolveBoot(parsed);
+                return;
+              }
+            } catch {
+              // ignore non-boot lines
+            }
+          }
+        });
+        child.stderr.on('data', (chunk) => {
+          errText += chunk.toString();
+        });
+        child.once('exit', (code, signal) => {
+          clearTimeout(timer);
+          rejectBoot(new Error(`kimi web exited early (code=${code}, signal=${signal}); stderr=${errText}`));
+        });
+      });
+
+      const res = await fetch(`${boot.origin}/api/v1/meta`, {
+        headers: { Authorization: `Bearer ${boot.token}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      expect('KAP /api/v1/meta responds HTTP 200', res.status === 200, `status=${res.status}`);
+      const payload = await res.json();
+      const caps = payload?.data?.capabilities ?? {};
+      for (const key of ['websocket', 'tasks', 'session_ephemeral_mcp', 'session_append_system_prompt', 'steer_parent_correlation']) {
+        expect(`KAP /meta capabilities.${key} is true`, caps[key] === true, String(caps[key]));
+      }
+    } catch (err) {
+      expect('KAP web --json /api/v1/meta probe succeeds', false, err instanceof Error ? err.message : String(err));
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill('SIGTERM');
+        await new Promise((done) => {
+          const forceTimer = setTimeout(() => {
+            if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+            done();
+          }, 3_000);
+          child.once('exit', () => {
+            clearTimeout(forceTimer);
+            done();
+          });
+        });
+      }
+      rmSync(tempHome, { recursive: true, force: true });
+    }
+  } else {
+    console.log('  skip runtime import and CLI checks (no node_modules in out-dir; install deps to enable)');
+  }
+
+  if (failures.length === 0) {
+    console.log(`verify: PASS (${pkg.name}@${pkg.version} KAP CLI + SDK contract holds)`);
+    process.exit(0);
+  }
+  console.error(`verify: FAIL (${failures.length} failure${failures.length === 1 ? '' : 's'})`);
+  process.exit(1);
+}
+
 // kimi-code 2.x has no kaos: the 2.x patch stack exposes the env and role
 // surface through KimiHarnessOptions instead of a LocalKaos re-export.
-const mjsSource = readFileSync(mjsPath, 'utf8');
 if (/-botiverse\./.test(pkg.version) && !/var LocalKaos = class LocalKaos\b/.test(mjsSource)) {
   const dmtsSource = readFileSync(dmtsPath, 'utf8');
   expect(

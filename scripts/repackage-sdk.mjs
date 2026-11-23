@@ -1,6 +1,7 @@
 // Repackage the upstream node-sdk (built) into a publishable @botiverse/kimi-code-sdk.
-// Run AFTER `pnpm --filter @moonshot-ai/kimi-code-sdk build` in an upstream checkout.
-// Usage: node repackage-sdk.mjs <upstream-node-sdk-dir> <out-dir> [kimi-release-tag] [npm-version-override]
+// Run AFTER `pnpm --filter @moonshot-ai/kimi-code-sdk build` (and optionally
+// `pnpm --filter @moonshot-ai/kimi-code build` when bundling the KAP CLI bin).
+// Usage: node repackage-sdk.mjs <upstream-node-sdk-dir> <out-dir> [kimi-release-tag] [npm-version-override] [--cli-dir <apps/kimi-code-dir>]
 //
 // `npm-version-override` (4th arg) lets us cut a fresh @botiverse/kimi-code-sdk
 // version even when upstream's node-sdk package.json version stayed put.
@@ -8,10 +9,11 @@
 // our consumer cadence shouldn't be hostage to it. When upstream ships a
 // meaningful bundled-implementation refresh (e.g. agent-core / kosong /
 // protocol upgrades inlined into dist) without bumping node-sdk version,
-// we patch-bump on our side. The mirror-tag → npm-version mapping in
+// we patch-bump on our side. The mirror-tag -> npm-version mapping in
 // RELEASES.md is the truth.
 //
-// Produces <out-dir> = a publishable npm package: dist/ + renamed package.json + LICENSE + NOTICE + README.
+// Produces <out-dir> = a publishable npm package: dist/ + renamed package.json + LICENSE + NOTICE + README
+// (plus dist/main.mjs, dist/search-worker.mjs, bin.kimi, dist-web/, native/ when --cli-dir is passed).
 //
 // Mirror-side surface additions (tygg/Hao 2026-06-20 #proj-runtime:96f626f3): when
 // an upstream `kimi-code` release ships a fully-bundled `LocalKaos` / `Kaos`
@@ -21,11 +23,50 @@
 // per-agent CLI wrapper PATH into Kimi tool execution without daemon-wide env
 // pollution. The implementation is already inlined into upstream dist; we only
 // extend the published export list.
-import { readFileSync, writeFileSync, cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { chmodSync, readFileSync, writeFileSync, cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-const [, , srcDir, outDir, kimiTag, npmVersionOverride] = process.argv;
-if (!srcDir || !outDir) { console.error('usage: repackage-sdk.mjs <src node-sdk dir> <out dir> [kimi tag] [npm-version-override]'); process.exit(1); }
+function parseArgs(argv) {
+  const positionals = [];
+  let cliDir;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--cli-dir') {
+      const next = argv[i + 1];
+      if (!next || next.startsWith('-')) {
+        throw new Error('repackage: --cli-dir requires a path argument');
+      }
+      cliDir = next;
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--cli-dir=')) {
+      const value = arg.slice('--cli-dir='.length);
+      if (!value) {
+        throw new Error('repackage: --cli-dir requires a non-empty path');
+      }
+      cliDir = value;
+      continue;
+    }
+    if (arg.startsWith('-')) {
+      throw new Error(`repackage: unknown flag ${arg}`);
+    }
+    positionals.push(arg);
+  }
+  return {
+    srcDir: positionals[0],
+    outDir: positionals[1],
+    kimiTag: positionals[2],
+    npmVersionOverride: positionals[3],
+    cliDir,
+  };
+}
+
+const { srcDir, outDir, kimiTag, npmVersionOverride, cliDir } = parseArgs(process.argv.slice(2));
+if (!srcDir || !outDir) {
+  console.error('usage: repackage-sdk.mjs <src node-sdk dir> <out dir> [kimi tag] [npm-version-override] [--cli-dir <apps/kimi-code dir>]');
+  process.exit(1);
+}
 
 const pkg = JSON.parse(readFileSync(join(srcDir, 'package.json'), 'utf8'));
 const upstreamName = pkg.name;                  // @moonshot-ai/kimi-code-sdk
@@ -33,6 +74,39 @@ const upstreamVersion = pkg.version;            // upstream's own version, e.g. 
 const version = npmVersionOverride || upstreamVersion;
 if (npmVersionOverride && npmVersionOverride !== upstreamVersion) {
   console.log(`note: overriding npm version ${upstreamVersion} -> ${npmVersionOverride}`);
+}
+
+const KAP_CAPABILITIES = [
+  'session_ephemeral_mcp',
+  'session_append_system_prompt',
+  'steer_parent_correlation',
+];
+
+function mergeRuntimeDeps(base = {}, extra = {}, label) {
+  const merged = { ...base };
+  for (const [dep, range] of Object.entries(extra)) {
+    if (typeof range === 'string' && range.startsWith('workspace:')) {
+      continue;
+    }
+    if (merged[dep] !== undefined && merged[dep] !== range) {
+      throw new Error(`repackage: ${label} conflict for ${dep}: ${merged[dep]} vs ${range}`);
+    }
+    merged[dep] = range;
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+let cliPkg;
+if (cliDir) {
+  const cliPkgPath = join(cliDir, 'package.json');
+  const cliMainPath = join(cliDir, 'dist', 'main.mjs');
+  const cliWorkerPath = join(cliDir, 'dist', 'search-worker.mjs');
+  for (const required of [cliPkgPath, cliMainPath, cliWorkerPath]) {
+    if (!existsSync(required)) {
+      throw new Error(`repackage: missing required CLI artifact ${required}`);
+    }
+  }
+  cliPkg = JSON.parse(readFileSync(cliPkgPath, 'utf8'));
 }
 
 // Surface mode is derived from the version suffix (RELEASES.md versioning policy):
@@ -50,10 +124,12 @@ if (npmVersionOverride && npmVersionOverride !== upstreamVersion) {
 // it (tygg "Pure mirror版本和repackage版本都发" #proj-runtime:a2c38238 2026-06-24).
 const isExtendedSurface = /-botiverse\b/.test(version);
 
-// Rebrand identity; keep upstream's runtime deps + bin/exports untouched (dist is bundled).
+// Rebrand identity; preserve exports and runtime deps (adding CLI bin/deps when --cli-dir is given).
 pkg.name = '@botiverse/kimi-code-sdk';
 pkg.version = version;
-pkg.description = `Botiverse repackage of ${upstreamName}${kimiTag ? ` (from kimi-code ${kimiTag})` : ''} — built node-sdk bundle for Slock. Mirror of MoonshotAI/kimi-code.`;
+pkg.description = cliPkg
+  ? `Botiverse repackage of ${upstreamName} and ${cliPkg.name}${kimiTag ? ` (from kimi-code ${kimiTag})` : ''} for Slock/OAR. Mirror of MoonshotAI/kimi-code.`
+  : `Botiverse repackage of ${upstreamName}${kimiTag ? ` (from kimi-code ${kimiTag})` : ''} - built node-sdk bundle for Slock. Mirror of MoonshotAI/kimi-code.`;
 pkg.repository = { type: 'git', url: 'git+https://github.com/botiverse/kimi-code-sdk.git' };
 pkg.homepage = 'https://github.com/botiverse/kimi-code-sdk#readme';
 pkg.bugs = { url: 'https://github.com/botiverse/kimi-code-sdk/issues' };
@@ -71,16 +147,64 @@ pkg.type = pkg.type || 'module';
 pkg.publishConfig = { access: 'public', provenance: true };   // OIDC trusted publishing + provenance
 delete pkg.private;
 delete pkg.devDependencies;                     // siblings are bundled into dist already
-delete pkg.scripts;                             // no build needed in the published pkg
-pkg.files = Array.from(new Set([...(pkg.files || ['dist']), 'LICENSE', 'NOTICE.md', 'README.md']));
-pkg.botiverse = { upstream: upstreamName, kimiRelease: kimiTag || null, source: 'https://github.com/MoonshotAI/kimi-code' };
+delete pkg.scripts;                             // no build or postinstall script in the published pkg
+
+const extraFiles = [];
+if (cliPkg) {
+  if (pkg.bin && Object.keys(pkg.bin).some((k) => k !== 'kimi')) {
+    throw new Error(`repackage: unexpected existing bin entries in node-sdk: ${JSON.stringify(pkg.bin)}`);
+  }
+  pkg.bin = { kimi: './dist/main.mjs' };
+  const mergedDeps = mergeRuntimeDeps(pkg.dependencies, cliPkg.dependencies, 'dependencies');
+  if (mergedDeps) pkg.dependencies = mergedDeps;
+  const mergedOptDeps = mergeRuntimeDeps(pkg.optionalDependencies, cliPkg.optionalDependencies, 'optionalDependencies');
+  if (mergedOptDeps) pkg.optionalDependencies = mergedOptDeps;
+  if (existsSync(join(cliDir, 'dist-web'))) extraFiles.push('dist-web');
+  if (existsSync(join(cliDir, 'native'))) extraFiles.push('native');
+}
+
+pkg.files = Array.from(new Set([...(pkg.files || ['dist']), ...extraFiles, 'LICENSE', 'NOTICE.md', 'README.md']));
+pkg.botiverse = {
+  upstream: upstreamName,
+  kimiRelease: kimiTag || null,
+  source: 'https://github.com/MoonshotAI/kimi-code',
+  ...(cliPkg
+    ? {
+        cli: {
+          upstream: cliPkg.name,
+          version: cliPkg.version,
+          kapCapabilities: KAP_CAPABILITIES,
+        },
+      }
+    : {}),
+};
 
 if (existsSync(outDir)) rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 cpSync(join(srcDir, 'dist'), join(outDir, 'dist'), { recursive: true });
+
+if (cliPkg) {
+  for (const file of ['main.mjs', 'search-worker.mjs']) {
+    const dest = join(outDir, 'dist', file);
+    if (existsSync(dest)) {
+      throw new Error(`repackage: filename collision in dist/${file} when merging CLI artifacts`);
+    }
+    cpSync(join(cliDir, 'dist', file), dest);
+  }
+  chmodSync(join(outDir, 'dist', 'main.mjs'), 0o755);
+  if (existsSync(join(cliDir, 'dist-web'))) {
+    cpSync(join(cliDir, 'dist-web'), join(outDir, 'dist-web'), { recursive: true });
+  }
+  if (existsSync(join(cliDir, 'native'))) {
+    cpSync(join(cliDir, 'native'), join(outDir, 'native'), { recursive: true });
+  }
+}
+
 if (isExtendedSurface) {
   if (bundlesLocalKaos(join(outDir, 'dist'))) {
     extendDistKaosSurface(join(outDir, 'dist'));
+  } else if (cliPkg) {
+    assertKapCliSurface(join(outDir, 'dist', 'main.mjs'));
   } else {
     assertHarnessEnvSurface(join(outDir, 'dist'));
   }
@@ -96,13 +220,16 @@ for (const base of [srcDir, join(srcDir, '..', '..')]) {
   }
 }
 if (!licCopied) console.warn('WARN: no upstream LICENSE found to bundle');
+const artifactSummary = cliPkg
+  ? `**${upstreamName}** node-sdk and **${cliPkg.name}** KAP CLI`
+  : `the built **${upstreamName}** node-sdk`;
 writeFileSync(join(outDir, 'NOTICE.md'),
-  `# NOTICE\n\n@botiverse/kimi-code-sdk is a repackage of the built **${upstreamName}** node-sdk\n` +
+  `# NOTICE\n\n@botiverse/kimi-code-sdk is a repackage of ${artifactSummary}\n` +
   `from [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code)${kimiTag ? ` at \`${kimiTag}\`` : ''}, ` +
   `distributed under upstream's MIT License (see LICENSE). Sibling packages are bundled into \`dist\`.\n` +
   `Mirror + provenance: https://github.com/botiverse/kimi-code-sdk\n`);
 writeFileSync(join(outDir, 'README.md'),
-  `# @botiverse/kimi-code-sdk\n\nBuilt repackage of \`${upstreamName}\`${kimiTag ? ` (kimi-code ${kimiTag})` : ''} for Slock/Botiverse.\n` +
+  `# @botiverse/kimi-code-sdk\n\nBuilt repackage of \`${upstreamName}\`${cliPkg ? ` and \`${cliPkg.name}\`` : ''}${kimiTag ? ` (kimi-code ${kimiTag})` : ''} for Slock/Botiverse.\n` +
   `Read-only mirror + release notes: https://github.com/botiverse/kimi-code-sdk\n\n> Not affiliated with Moonshot AI. MIT (see LICENSE).\n`);
 console.log(`repackaged ${upstreamName}@${version} -> @botiverse/kimi-code-sdk@${version} at ${outDir}`);
 
@@ -115,6 +242,16 @@ console.log(`repackaged ${upstreamName}@${version} -> @botiverse/kimi-code-sdk@$
 // rewrite. Fail closed when a -botiverse build carries neither surface.
 function bundlesLocalKaos(distDir) {
   return /var LocalKaos = class LocalKaos\b/.test(readFileSync(join(distDir, 'index.mjs'), 'utf8'));
+}
+
+function assertKapCliSurface(mainMjsPath) {
+  const mainJs = readFileSync(mainMjsPath, 'utf8');
+  for (const capability of KAP_CAPABILITIES) {
+    if (!mainJs.includes(capability)) {
+      throw new Error(`repackage: KAP CLI dist/main.mjs is missing capability marker ${capability}; refusing to publish`);
+    }
+  }
+  console.log(`repackage: KAP CLI bundle verified (${KAP_CAPABILITIES.join(', ')})`);
 }
 
 function assertHarnessEnvSurface(distDir) {
