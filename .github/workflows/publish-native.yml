@@ -1,0 +1,252 @@
+name: publish-native
+
+# Build and publish standalone Node SEA native kimi binaries + sha256 files
+# to a public GitHub Release. Triggered strictly by a `native/v*` tag whose
+# commit is on `main`.
+
+on:
+  push:
+    tags:
+      - 'native/v*'
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      source_sha: ${{ steps.meta.outputs.source_sha }}
+      source_ref: ${{ steps.meta.outputs.source_ref }}
+    steps:
+      - name: Checkout main tag context
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify tag is on main and resolve pinned source commit
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#native/v}"
+          if [ "$VERSION" = "$TAG" ] || [ -z "$VERSION" ]; then
+            echo "ERROR: expected tag format native/v<version>, got $TAG" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "ERROR: tag $TAG ($GITHUB_SHA) is not on origin/main" >&2
+            exit 1
+          fi
+          META=$(node -e '
+            const fs = require("node:fs");
+            const data = JSON.parse(fs.readFileSync("native-releases.json", "utf8"));
+            const entry = data[process.argv[1]];
+            if (!entry || typeof entry.sourceSha !== "string" || !/^[0-9a-f]{40}$/.test(entry.sourceSha)) {
+              console.error(`ERROR: missing or invalid native-releases.json entry for ${process.argv[1]}`);
+              process.exit(1);
+            }
+            const ref = typeof entry.sourceRef === "string" ? entry.sourceRef : "";
+            console.log(JSON.stringify({ sourceSha: entry.sourceSha, sourceRef: ref }));
+          ' "$VERSION")
+          SOURCE_SHA=$(node -e 'console.log(JSON.parse(process.argv[1]).sourceSha)' "$META")
+          SOURCE_REF=$(node -e 'console.log(JSON.parse(process.argv[1]).sourceRef)' "$META")
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "source_ref=$SOURCE_REF" >> "$GITHUB_OUTPUT"
+
+  native-bundle:
+    needs: resolve
+    name: Native bundle (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: linux-x64
+            exe: kimi
+          - os: ubuntu-24.04-arm
+            target: linux-arm64
+            exe: kimi
+          - os: macos-15
+            target: darwin-arm64
+            exe: kimi
+          - os: macos-15-intel
+            target: darwin-x64
+            exe: kimi
+          - os: windows-2025
+            target: win32-x64
+            exe: kimi.exe
+
+    steps:
+      - name: Checkout patched CLI source at pinned commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve.outputs.source_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Checkout main verification scripts
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          path: .mirror-main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: 'pnpm'
+
+      - name: Verify CLI package version matches tag
+        env:
+          EXPECTED_VERSION: ${{ needs.resolve.outputs.version }}
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const actual = JSON.parse(fs.readFileSync("apps/kimi-code/package.json", "utf8")).version;
+            if (actual !== process.env.EXPECTED_VERSION) {
+              console.error("expected version " + process.env.EXPECTED_VERSION + ", got " + actual);
+              process.exit(1);
+            }
+          '
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Kimi web assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          node apps/kimi-code/scripts/sync-web-dist.mjs
+          node apps/kimi-code/scripts/check-web-assets.mjs
+
+      - name: Build native executable
+        env:
+          KIMI_AZURE_TRUSTED_SIGNING: 'false'
+        run: pnpm --filter @moonshot-ai/kimi-code run build:native:sea
+
+      - name: Run upstream native smoke test
+        run: pnpm --filter @moonshot-ai/kimi-code run test:native:smoke
+
+      - name: Run KAP capability and OAR identity probe
+        env:
+          TARGET: ${{ matrix.target }}
+          EXE: ${{ matrix.exe }}
+          EXPECTED_VERSION: ${{ needs.resolve.outputs.version }}
+        shell: bash
+        run: node .mirror-main/scripts/verify-native-kap.mjs "apps/kimi-code/dist-native/bin/$TARGET/$EXE" "$EXPECTED_VERSION"
+
+      - name: Package native zip and sha256
+        run: pnpm --filter @moonshot-ai/kimi-code run package:native
+
+      - name: Upload native artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kimi-code-native-${{ matrix.target }}
+          retention-days: 3
+          if-no-files-found: error
+          path: |
+            apps/kimi-code/dist-native/artifacts/kimi-code-${{ matrix.target }}.zip
+            apps/kimi-code/dist-native/artifacts/kimi-code-${{ matrix.target }}.zip.sha256
+
+  release:
+    needs: [resolve, native-bundle]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout main tag context
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Download all native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: kimi-code-native-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify checksums and publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          SOURCE_SHA: ${{ needs.resolve.outputs.source_sha }}
+          SOURCE_REF: ${{ needs.resolve.outputs.source_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "ERROR: release $TAG already exists" >&2
+            exit 1
+          fi
+
+          TARGETS=(linux-x64 linux-arm64 darwin-arm64 darwin-x64 win32-x64)
+          declare -A ARCHIVE_SHA BIN_SHA
+          for target in "${TARGETS[@]}"; do
+            zip="release-assets/kimi-code-${target}.zip"
+            sha="release-assets/kimi-code-${target}.zip.sha256"
+            test -f "$zip"
+            test -f "$sha"
+            (cd release-assets && sha256sum -c "kimi-code-${target}.zip.sha256")
+            unzip -tq "$zip"
+            digest=$(awk '{print $1}' "$sha")
+            exe="kimi"
+            [ "$target" = "win32-x64" ] && exe="kimi.exe"
+            bin_digest=$(unzip -p "$zip" "$exe" | sha256sum | awk '{print $1}')
+            if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "ERROR: invalid archive sha256 for ${target}: ${digest}" >&2
+              exit 1
+            fi
+            if [[ ! "$bin_digest" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "ERROR: invalid unpacked binary sha256 for ${target}: ${bin_digest}" >&2
+              exit 1
+            fi
+            ARCHIVE_SHA["$target"]="$digest"
+            BIN_SHA["$target"]="$bin_digest"
+          done
+
+          {
+            echo "## Kimi Code Native CLI ${VERSION}"
+            echo ""
+            echo "Built in CI from commit \`${SOURCE_SHA}\` (\`${SOURCE_REF}\`)."
+            echo ""
+            echo "Verified KAP \`/api/v1/meta\` capabilities: \`websocket\`, \`tasks\`, \`session_ephemeral_mcp\`, \`session_append_system_prompt\`, \`steer_parent_correlation\`."
+            echo ""
+            echo "### Signing Status"
+            echo ""
+            echo "- \`linux-x64\`, \`linux-arm64\`: unsigned ELF executable."
+            echo "- \`darwin-arm64\`, \`darwin-x64\`: ad-hoc signed (\`codesign --sign -\`, not notarized)."
+            echo "- \`win32-x64\`: unsigned \`kimi.exe\` (check \`sha256\` before launching)."
+            echo ""
+            echo "### Artifacts and SHA-256 Checksums"
+            echo ""
+            echo "| Target | Archive | Archive SHA-256 | Binary SHA-256 |"
+            echo "| --- | --- | --- | --- |"
+            for target in "${TARGETS[@]}"; do
+              echo "| \`${target}\` | \`kimi-code-${target}.zip\` | \`${ARCHIVE_SHA[$target]}\` | \`${BIN_SHA[$target]}\` |"
+            done
+          } > notes.md
+
+          gh release create "$TAG" \
+            release-assets/kimi-code-*.zip \
+            release-assets/kimi-code-*.zip.sha256 \
+            --title "Kimi Code Native CLI ${VERSION} (${TAG})" \
+            --notes-file notes.md \
+            --verify-tag
